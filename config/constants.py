@@ -25,3 +25,6 @@ class Constants:
         class Retrieving: 
             class Alpaca:
                 BARS_SAVE_DIR = '../data/raw/alpaca/bars'
+
+    class MLFlow: 
+        TRACKING_URI = "http://127.0.0.1:8080"

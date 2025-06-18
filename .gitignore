@@ -1,0 +1,7 @@
+mlruns/
+mlartifacts/
+.idea/
+.vscode/
+__pycache__/
+.env
+data/raw/alpaca/bars/

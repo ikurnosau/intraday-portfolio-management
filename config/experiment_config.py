@@ -26,6 +26,8 @@ class DataConfig:
 @dataclass
 class ModelConfig: 
     model: torch.nn.Module
+    registered_model_name: str
+
 
 @dataclass
 class TrainConfig: 
@@ -37,9 +39,15 @@ class TrainConfig:
     metrics: dict[str, Callable]
     save_path: str
 
+
+@dataclass
+class ObservabilityConfig: 
+    experiment_name: str
+
+
 @dataclass
 class ExperimentConfig: 
     data_config: DataConfig
     model_config: ModelConfig
     train_config: TrainConfig    
-
+    observability_config: ObservabilityConfig

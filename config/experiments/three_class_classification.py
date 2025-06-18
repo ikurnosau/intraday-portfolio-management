@@ -5,13 +5,13 @@ sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 from datetime import datetime, timezone
 import torch
 
-from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig, ObservabilityConfig
+from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig
 from config.constants import Constants
 from data.processed.indicators import *
-from data.processed.targets import Balanced3ClassClassification, BinaryClassification
+from data.processed.targets import Balanced3ClassClassification
 from data.processed.normalization import ZScoreOverWindowNormalizer, ZScoreNormalizer, MinMaxNormalizer
 from data.processed.missing_values_handling import DummyMissingValuesHandler
-from modeling.models.mlp import MLPClassifier, MLPClassifierScaled
+from modeling.models.mlp import MLPClassifier
 from modeling.metrics import accuracy, rmse
 
 data_config = DataConfig(
@@ -70,40 +70,32 @@ data_config = DataConfig(
 )
 
 model_config=ModelConfig(
-    model=MLPClassifierScaled(
+    model=MLPClassifier(
         input_dim=37,
         n_class=3,
-        hidden_dims=[512, 256, 128, 64],
-        dropout=0.3
-    ), 
-    registered_model_name="Cur Model"
+        hidden_dims=[128, 64]
+    )
 )
 
 cur_optimizer = torch.optim.Adam(
     model_config.model.parameters(), 
-    lr=1e-4,
-    weight_decay=1e-5)
+    lr=1e-3)
 
 train_config=TrainConfig(
     loss_fn=torch.nn.CrossEntropyLoss(),
     optimizer=cur_optimizer,
     scheduler = torch.optim.lr_scheduler.StepLR(
         cur_optimizer, 
-        step_size=5, 
-        gamma=0.5),
-    metrics={ "accuracy": accuracy, "rmse": rmse },
-    num_epochs=5,
+        step_size=7, 
+        gamma=0.1),
+    metrics={ "accuracy": accuracy, "rmse": rmse},
+    num_epochs=10,
     device=torch.device("cuda"),
     save_path=None
-)
-
-observability_config = ObservabilityConfig(
-    experiment_name="Cur Experiment"
 )
 
 config = ExperimentConfig(
     data_config=data_config,
     model_config=model_config,
-    train_config=train_config,
-    observability_config=observability_config
+    train_config=train_config
 )

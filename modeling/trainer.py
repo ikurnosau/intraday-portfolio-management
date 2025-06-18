@@ -99,6 +99,11 @@ class Trainer:
                 for name, fn in self.metrics.items():
                     total_metrics[name] += fn(outputs, targets)
 
+        print(self.model.training)        # should be True during train(), False during eval()
+        for m in self.model.modules():
+            if isinstance(m, torch.nn.BatchNorm1d):
+                print("BN momentum:", m.momentum)
+
         epoch_loss = total_loss / num_batches
         epoch_metrics = {name: total_metrics[name] / num_batches for name in total_metrics}
         return epoch_loss, epoch_metrics
@@ -121,6 +126,11 @@ class Trainer:
                 if self.metrics:
                     for name, fn in self.metrics.items():
                         total_metrics[name] += fn(outputs, targets)
+
+            print(self.model.training)        # should be True during train(), False during eval()
+            for m in self.model.modules():
+                if isinstance(m, torch.nn.BatchNorm1d):
+                    print("BN momentum:", m.momentum)
 
         epoch_loss = total_loss / num_batches
         epoch_metrics = {name: total_metrics[name] / num_batches for name in total_metrics}

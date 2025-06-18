@@ -5,7 +5,7 @@ sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 from datetime import datetime, timezone
 import torch
 
-from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig, ObservabilityConfig
+from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig
 from config.constants import Constants
 from data.processed.indicators import *
 from data.processed.targets import Balanced3ClassClassification, BinaryClassification
@@ -74,15 +74,12 @@ model_config=ModelConfig(
         input_dim=37,
         n_class=3,
         hidden_dims=[512, 256, 128, 64],
-        dropout=0.3
-    ), 
-    registered_model_name="Cur Model"
+    )
 )
 
 cur_optimizer = torch.optim.Adam(
     model_config.model.parameters(), 
-    lr=1e-4,
-    weight_decay=1e-5)
+    lr=1e-4)
 
 train_config=TrainConfig(
     loss_fn=torch.nn.CrossEntropyLoss(),
@@ -92,18 +89,13 @@ train_config=TrainConfig(
         step_size=5, 
         gamma=0.5),
     metrics={ "accuracy": accuracy, "rmse": rmse },
-    num_epochs=5,
+    num_epochs=30,
     device=torch.device("cuda"),
     save_path=None
-)
-
-observability_config = ObservabilityConfig(
-    experiment_name="Cur Experiment"
 )
 
 config = ExperimentConfig(
     data_config=data_config,
     model_config=model_config,
-    train_config=train_config,
-    observability_config=observability_config
+    train_config=train_config
 )
