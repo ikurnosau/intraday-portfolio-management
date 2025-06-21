@@ -17,7 +17,7 @@ class DataConfig:
     missing_values_handler: Callable
     in_seq_len: int
     train_set_last_date: datetime
-    flatten_sequence: bool
+    multi_asset_prediction: bool
 
     batch_size: int
     shuffle: bool

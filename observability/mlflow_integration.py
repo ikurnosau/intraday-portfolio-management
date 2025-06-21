@@ -19,6 +19,7 @@ def log_experiment(
         model: torch.nn,
         history: dict[str, object],
         input_data_sample: torch.Tensor): 
+    # mlflow server --host 127.0.0.1 --port 8080
     
     mlflow.set_tracking_uri(uri=Constants.MLFlow.TRACKING_URI)
 

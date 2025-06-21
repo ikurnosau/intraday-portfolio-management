@@ -76,7 +76,7 @@ class AlpacaMarketsRetriever:
         response = {symbol:
                     pd.DataFrame([data_item.__dict__
                                   for data_item in stock_data]) \
-                        .drop(columns=['symbol', 'trade_count']) \
+                        .drop(columns=['symbol', 'trade_count', 'vwap']) \
                         .rename(columns={'timestamp': 'date'})
                 for symbol, stock_data in bars.items()}
         

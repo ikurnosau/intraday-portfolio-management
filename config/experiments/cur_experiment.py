@@ -10,13 +10,15 @@ from config.constants import Constants
 from data.processed.indicators import *
 from data.processed.targets import Balanced3ClassClassification, BinaryClassification
 from data.processed.normalization import ZScoreOverWindowNormalizer, ZScoreNormalizer, MinMaxNormalizer
-from data.processed.missing_values_handling import DummyMissingValuesHandler
+from data.processed.missing_values_handling import DummyMissingValuesHandler, ForwardFillFlatBars
 from modeling.models.mlp import MLPClassifier, MLPClassifierScaled
+from modeling.models.lstm import LSTMClassifier
 from modeling.metrics import accuracy, rmse
 
 data_config = DataConfig(
-    symbol_or_symbols='AAPL', 
+    symbol_or_symbols=['AAPL'], 
     start=datetime(2025, 1, 1), 
+    # start=datetime(2024, 6, 1),
     end=datetime(2025, 6, 1),
 
     features={
@@ -60,39 +62,46 @@ data_config = DataConfig(
     },
     target=Balanced3ClassClassification(base_feature='close'),
     normalizer=MinMaxNormalizer(),
-    missing_values_handler=DummyMissingValuesHandler(),
+    missing_values_handler=ForwardFillFlatBars(),
     train_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc), 
     in_seq_len=1,
-    flatten_sequence=False,
+    multi_asset_prediction=False,
 
     batch_size=32,
     shuffle=False
 )
 
 model_config=ModelConfig(
-    model=MLPClassifierScaled(
+    # model=LSTMClassifier(
+    #     input_dim=37,
+    #     n_class=3, 
+    #     hidden_dim=256,
+    #     num_layers=3, 
+    #     bidirectional=True,
+    #     dropout=0
+    # ),
+    model=MLPClassifier(
         input_dim=37,
         n_class=3,
-        hidden_dims=[512, 256, 128, 64],
-        dropout=0.3
-    ), 
-    registered_model_name="Cur Model"
+        hidden_dims=[128, 64]
+    ),
+    registered_model_name="MLP Default"
 )
 
 cur_optimizer = torch.optim.Adam(
     model_config.model.parameters(), 
-    lr=1e-4,
-    weight_decay=1e-5)
+    lr=1e-3,
+    weight_decay=1e-10)
 
 train_config=TrainConfig(
     loss_fn=torch.nn.CrossEntropyLoss(),
     optimizer=cur_optimizer,
     scheduler = torch.optim.lr_scheduler.StepLR(
         cur_optimizer, 
-        step_size=5, 
+        step_size=5000, 
         gamma=0.5),
     metrics={ "accuracy": accuracy, "rmse": rmse },
-    num_epochs=5,
+    num_epochs=10,
     device=torch.device("cuda"),
     save_path=None
 )
