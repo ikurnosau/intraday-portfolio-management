@@ -2,7 +2,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, time
 import torch
 
 from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig, ObservabilityConfig
@@ -10,8 +10,8 @@ from config.constants import Constants
 from data.processed.indicators import *
 from data.processed.targets import Balanced3ClassClassification, BinaryClassification
 from data.processed.normalization import ZScoreOverWindowNormalizer, ZScoreNormalizer, MinMaxNormalizer
-from data.processed.missing_values_handling import DummyMissingValuesHandler, ForwardFillFlatBars
-from modeling.models.mlp import MLPClassifier, MLPClassifierScaled
+from data.processed.missing_values_handling import ForwardFillFlatBars
+from modeling.models.mlp import MLPClassifier
 from modeling.models.lstm import LSTMClassifier
 from modeling.metrics import accuracy, rmse
 
@@ -66,6 +66,7 @@ data_config = DataConfig(
     train_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc), 
     in_seq_len=1,
     multi_asset_prediction=False,
+    cutoff_time=time(hour=14, minute=10),
 
     batch_size=32,
     shuffle=False
@@ -73,37 +74,41 @@ data_config = DataConfig(
 
 model_config=ModelConfig(
     # model=LSTMClassifier(
-    #     input_dim=37,
+    #     input_dim=2,
     #     n_class=3, 
     #     hidden_dim=256,
     #     num_layers=3, 
     #     bidirectional=True,
-    #     dropout=0
+    #     dropout=0.1
     # ),
     model=MLPClassifier(
         input_dim=37,
         n_class=3,
-        hidden_dims=[128, 64]
+        hidden_dims=[128, 64],
+        dropout=0.0, 
+        activation=torch.nn.ReLU(inplace=True),
+        batch_norm=False
     ),
     registered_model_name="MLP Default"
 )
 
-cur_optimizer = torch.optim.Adam(
+cur_optimizer = torch.optim.AdamW(
     model_config.model.parameters(), 
     lr=1e-3,
-    weight_decay=1e-10)
+    weight_decay=1e-10,
+    amsgrad=True)
 
 train_config=TrainConfig(
     loss_fn=torch.nn.CrossEntropyLoss(),
     optimizer=cur_optimizer,
     scheduler = torch.optim.lr_scheduler.StepLR(
         cur_optimizer, 
-        step_size=5000, 
+        step_size=10, 
         gamma=0.5),
     metrics={ "accuracy": accuracy, "rmse": rmse },
-    num_epochs=10,
+    num_epochs=50,
     device=torch.device("cuda"),
-    save_path=None
+    save_path=""
 )
 
 observability_config = ObservabilityConfig(

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, time
 from typing import Callable
 from dataclasses import dataclass
 import torch
@@ -18,6 +18,7 @@ class DataConfig:
     in_seq_len: int
     train_set_last_date: datetime
     multi_asset_prediction: bool
+    cutoff_time: datetime.time | None = None  # time-of-day cutoff for features
 
     batch_size: int
     shuffle: bool

@@ -3,10 +3,6 @@ import logging
 from datetime import timedelta
 
 
-class DummyMissingValuesHandler: 
-    def __call__(self, data: pd.DataFrame) -> pd.DataFrame:
-        return data
-
 class ForwardFillFlatBars:
     def __call__(self, data: pd.DataFrame) -> pd.DataFrame:
         data_orig = data.copy()
@@ -31,7 +27,7 @@ class ForwardFillFlatBars:
 
         self.test_original_data_preserved(data_orig, data_filled)
 
-        return data_filled
+        return data_filled.reset_index(drop=True)
     
     @staticmethod
     def test_original_data_preserved(original_df, filled_df):

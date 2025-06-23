@@ -21,7 +21,8 @@ class DatasetCreator:
                  missing_values_handler: Callable,
                  in_seq_len: int,
                  train_set_last_date: datetime,
-                 multi_asset_prediction: bool):
+                 multi_asset_prediction: bool,
+                 cutoff_time: datetime_lib.time | None = datetime_lib.time(hour=14, minute=10)):
         self.features = features
         self.target = target
         self.normalizer = normalizer
@@ -29,102 +30,142 @@ class DatasetCreator:
         self.in_seq_len = in_seq_len
         self.train_last_date = train_set_last_date
         self.multi_asset_prediction = multi_asset_prediction
+        self.cutoff_time = cutoff_time
 
     def create_dataset_numpy(self, 
                              data: dict[str, pd.DataFrame],
-                             date_column='date') -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        all_features = {}
-        for asset_name, asset_data in data.items(): 
-            logging.info(f'Processing {asset_name}...')
+                             date_column: str = 'date') -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """High-level orchestrator that transforms raw per-asset OHLCV data into
+        numpy arrays suitable for model consumption.
 
-            asset_data = filter_by_regular_hours(asset_data, datetime_column='date')
-            logging.info('Filtered by regular hours!')
+        The method now delegates to a set of small private helpers so that each
+        step can be unit-tested independently.
+        """
 
-            asset_data = self.missing_values_handler(asset_data)
-            logging.info(f'Missing values are handled!')
+        # ------------------------------------------------------------------
+        # 1. Pre-process every asset independently
+        # ------------------------------------------------------------------
+        processed_assets: dict[str, pd.DataFrame] = {}
+        skipped_assets: list[str] = []
 
-            asset_features = pd.DataFrame()
-            asset_features[date_column] = pd.to_datetime(asset_data[date_column])
+        for asset_name, asset_df in data.items():
+            logging.info(f"Processing {asset_name} …")
+            features_df = self._process_single_asset(asset_df, date_column=date_column)
 
-            for indicator_name, indicator_transformation in self.features.items():
-                asset_features[indicator_name] = indicator_transformation(asset_data).astype(np.float32)
+            if not processed_assets:
+                required_rows = len(features_df)
+            else:
+                required_rows = len(next(iter(processed_assets.values())))
 
-            logging.info(f'Features calculated!')
+            if len(features_df) == required_rows:
+                processed_assets[asset_name] = features_df
+            else:
+                logging.info(
+                    f"{asset_name} has {len(features_df)} rows, but {required_rows} are "
+                    "expected. Skipping …"
+                )
+                skipped_assets.append(asset_name)
 
-            feature_names = list(self.features.keys())
-            asset_features.loc[:, feature_names] = self.normalizer(asset_features[feature_names]).astype(np.float32)
+        logging.info(
+            f"Finished feature generation. {len(skipped_assets)} assets skipped due to insufficient rows."
+        )
 
-            logging.info(f'Features normalized!')
+        # ------------------------------------------------------------------
+        # 2. Train / test split per asset
+        # ------------------------------------------------------------------
+        train_dict, test_dict = self._train_test_split(processed_assets)
 
-            asset_features['target'] = self.target(asset_data)
-            logging.info(f'Target calculated!')
+        # ------------------------------------------------------------------
+        # 3. Convert per-asset DataFrames → numpy dictionaries
+        # ------------------------------------------------------------------
+        per_asset_X_train = {a: df.drop(['date', 'target'], axis=1).to_numpy(dtype=np.float32)
+                              for a, df in train_dict.items()}
+        per_asset_y_train = {a: df['target'].to_numpy(dtype=np.float32)
+                              for a, df in train_dict.items()}
 
-            asset_features = asset_features[asset_features['date'].dt.time >= datetime_lib.time(hour=14, minute=10)]
+        per_asset_X_test = {a: df.drop(['date', 'target'], axis=1).to_numpy(dtype=np.float32)
+                             for a, df in test_dict.items()}
+        per_asset_y_test = {a: df['target'].to_numpy(dtype=np.float32)
+                             for a, df in test_dict.items()}
 
-            num_null_rows = asset_features.isnull().any(axis=1).sum()
-            asset_features = asset_features.dropna()
-            logging.info(f'Dropped {num_null_rows} rows with NaN values')
+        # ------------------------------------------------------------------
+        # 4. Stack into final tensors
+        # ------------------------------------------------------------------
+        X_train, y_train = self._stack(per_asset_X_train, per_asset_y_train)
+        X_test, y_test = self._stack(per_asset_X_test, per_asset_y_test)
 
-            all_features[asset_name] = asset_features
-
-        all_features_train = {
-            asset: asset_features[asset_features['date'].apply(lambda date: date <= self.train_last_date)] 
-                for asset, asset_features in all_features.items()
-        }
-        all_features_test = {
-            asset: asset_features[asset_features['date'].apply(lambda date: date > self.train_last_date)] 
-                for asset, asset_features in all_features.items()
-        }
-
-        per_asset_X_train = {asset: asset_features.drop(['date', 'target'], axis=1).to_numpy() for asset, asset_features in all_features_train.items()}
-        per_asset_y_train = {asset: asset_features['target'].to_numpy() for asset, asset_features in all_features_train.items()}
-
-        per_asset_X_test = {asset: asset_features.drop(['date', 'target'], axis=1).to_numpy() for asset, asset_features in all_features_test.items()}
-        per_asset_y_test = {asset: asset_features['target'].to_numpy() for asset, asset_features in all_features_test.items()}
-
-        if self.multi_asset_prediction: 
-            # creating (asset, batch, features) shape
-            X_train = np.stack(list(per_asset_X_train.values()), axis=0)
-            y_train = np.stack(list(per_asset_y_train.values()), axis=0)
-
-            X_test = np.stack(list(per_asset_X_test.values()), axis=0)
-            y_test = np.stack(list(per_asset_y_test.values()), axis=0)
-        else: 
-            # creating (batch, features) shape
-            X_train = np.vstack(list(per_asset_X_train.values()))
-            y_train = np.vstack(list(per_asset_y_train.values())).flatten()
-
-            X_test = np.vstack(list(per_asset_X_test.values()))
-            y_test = np.vstack(list(per_asset_y_test.values())).flatten()
-
+        # ------------------------------------------------------------------
+        # 5. Convert to sequential format if requested
+        # ------------------------------------------------------------------
         if self.in_seq_len > 1:
-            # creating (asset, batch, window, features) or (batch, window, features) shape depending on multi_asset_prediction value
             X_train, y_train = self.transform_data_to_sequential(X_train, y_train)
-            X_test, y_test = self.transform_data_to_sequential(X_test, y_test)   
-             
-
-        # all_features_df = pd.concat(all_features, ignore_index=True)
-
-        # train_df = all_features_df[all_features_df['date'].apply(lambda date: date <= self.train_last_date)]
-        # test_df = all_features_df[all_features_df['date'].apply(lambda date: date > self.train_last_date)]
-
-        # X_train, y_train = train_df.drop(['date', 'target'], axis=1).to_numpy(), train_df['target'].to_numpy()
-        # X_test, y_test = test_df.drop(['date', 'target'], axis=1).to_numpy(), test_df['target'].to_numpy()
-
-        # if self.in_seq_len > 1: 
-        #     X_train, y_train = self.transform_data_to_sequential(X_train, y_train)
-        #     X_test, y_test = self.transform_data_to_sequential(X_test, y_test)        
-
-        #     if self.flatten_sequence:
-        #         X_train = X_train.reshape((X_train.shape[0], -1))
-        #         X_test = X_test.reshape((X_test.shape[0], -1))
+            X_test, y_test = self.transform_data_to_sequential(X_test, y_test)
 
         return X_train, y_train, X_test, y_test
     
     def transform_data_to_sequential(self, X, y): 
-        X = sliding_window_view(X, window_shape=self.in_seq_len, axis=0).transpose(-3, -1, -2)
+        X = sliding_window_view(X, window_shape=self.in_seq_len, axis=len(X.shape) - 2).swapaxes(-2, -1)
         y = y[..., self.in_seq_len - 1:]
+
         return X, y
 
+    def _process_single_asset(self, asset_df: pd.DataFrame, *, date_column: str = 'date') -> pd.DataFrame:
+        """Run full feature/target engineering pipeline for a single asset."""
 
+        # Filter to regular trading hours
+        asset_df = filter_by_regular_hours(asset_df, datetime_column=date_column)
 
+        # Handle missing values (can expand later)
+        asset_df = self.missing_values_handler(asset_df)
+
+        # --------------------------------------------------------------
+        # Build features DataFrame (date + engineered features)
+        # --------------------------------------------------------------
+        feat_df = pd.DataFrame()
+        feat_df[date_column] = pd.to_datetime(asset_df[date_column])
+
+        for name, transform in self.features.items():
+            feat_df[name] = transform(asset_df).astype(np.float32)
+
+        # Normalise only the feature columns
+        feature_cols = list(self.features.keys())
+        feat_df.loc[:, feature_cols] = self.normalizer(feat_df[feature_cols]).astype(np.float32)
+
+        # Add target
+        feat_df['target'] = self.target(asset_df)
+
+        # Optional intra-day cutoff
+        if self.cutoff_time is not None:
+            feat_df = feat_df[feat_df['date'].dt.time >= self.cutoff_time]
+
+        # Fill remaining NaNs with 0.5 sentinel (kept for backward compat)
+        num_null_rows = feat_df.isnull().any(axis=1).sum()
+        if num_null_rows:
+            logging.info(f"Imputing {num_null_rows} NaN rows with 0.5 sentinel value")
+        feat_df = feat_df.fillna(0.5)
+
+        return feat_df.reset_index(drop=True)
+
+    def _train_test_split(self, full_dict: dict[str, pd.DataFrame]):
+        """Split each asset DataFrame into train and test parts."""
+        train_dict = {
+            asset: df[df['date'] <= self.train_last_date]
+            for asset, df in full_dict.items()
+        }
+        test_dict = {
+            asset: df[df['date'] > self.train_last_date]
+            for asset, df in full_dict.items()
+        }
+        return train_dict, test_dict
+
+    def _stack(self, per_asset_X: dict[str, np.ndarray], per_asset_y: dict[str, np.ndarray]):
+        """Combine per-asset arrays into the final model-ready structure."""
+        if self.multi_asset_prediction:
+            # shape → (asset, batch, features)
+            X = np.stack(list(per_asset_X.values()), axis=0)
+            y = np.stack(list(per_asset_y.values()), axis=0)
+        else:
+            # shape → (batch, features)
+            X = np.vstack(list(per_asset_X.values()))
+            y = np.vstack(list(per_asset_y.values())).flatten()
+        return X.astype(np.float32), y.astype(np.float32)
