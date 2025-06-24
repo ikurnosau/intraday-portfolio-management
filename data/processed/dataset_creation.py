@@ -131,6 +131,15 @@ class DatasetCreator:
         feature_cols = list(self.features.keys())
         feat_df.loc[:, feature_cols] = self.normalizer(feat_df[feature_cols]).astype(np.float32)
 
+        # --------------------------------------------------------------
+        # If the target transformer supports a `.fit` method, compute its
+        # parameters **only on the training slice** so that no future
+        # information leaks into label encoding.
+        # --------------------------------------------------------------
+        if hasattr(self.target, "fit") and callable(getattr(self.target, "fit")):
+            training_slice = asset_df[pd.to_datetime(asset_df[date_column]) <= self.train_last_date]
+            self.target.fit(training_slice)
+
         # Add target
         feat_df['target'] = self.target(asset_df)
 

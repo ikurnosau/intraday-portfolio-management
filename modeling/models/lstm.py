@@ -20,11 +20,13 @@ class LSTMClassifier(nn.Module):
                  hidden_dim=128,
                  num_layers=2,
                  bidirectional=False,
+                 layer_norm=False,
                  dropout=0.0):
         super(LSTMClassifier, self).__init__()
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.bidirectional = bidirectional
+        self.layer_norm = layer_norm
         self.num_directions = 2 if bidirectional else 1
         self.n_class = n_class
 
@@ -37,6 +39,9 @@ class LSTMClassifier(nn.Module):
             bidirectional=bidirectional,
             dropout=dropout if num_layers > 1 else 0
         )
+        if self.layer_norm:
+            # Layer normalization to stabilize hidden states
+            self.norm = nn.LayerNorm(hidden_dim * self.num_directions)
         # Fully connected output layer
         self.fc = nn.Linear(hidden_dim * self.num_directions, self.n_class)
 
@@ -56,6 +61,11 @@ class LSTMClassifier(nn.Module):
         out, _ = self.lstm(x)  # out: (N, T, hidden_dim * num_directions)
 
         # Use the last time-step's output for classification
-        last_out = out[:, -1, :]  # (N, hidden_dim * num_directions)
+        if self.layer_norm:
+            # Apply layer norm to the last hidden state before classification
+            last_out = self.norm(out[:, -1, :])  # (N, hidden_dim * num_directions)
+        else:
+            last_out = out[:, -1, :]  # (N, hidden_dim * num_directions)
+
         logits = self.fc(last_out)  # (N, 3)
         return logits

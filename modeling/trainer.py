@@ -91,6 +91,8 @@ class Trainer:
             outputs = self.model(inputs)
             loss = self.loss_fn(outputs, targets)
             loss.backward()
+            # Clip gradients to prevent exploding gradients and stabilize training
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.optimizer.step()
 
             total_loss += loss.item()

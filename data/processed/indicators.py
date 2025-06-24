@@ -370,3 +370,40 @@ class Vol:
         prev_close = df[self.close_feature].shift(1)
         vol = abs(df[self.close_feature] - prev_close) / df[self.close_feature]
         return vol.ewm(span=self.period, adjust=False).mean().fillna(0)
+
+
+class LogVolumeReturn:
+    """Computes log(volume_t / volume_{t-1} + epsilon) to get scale-invariant volume changes."""
+    def __init__(self, epsilon: float = 1e-8):
+        self.epsilon = epsilon
+
+    def __call__(self, data: pd.DataFrame) -> pd.Series:
+        # Add epsilon to both numerator and denominator to handle zeros
+        volume_t = data['volume'] + self.epsilon
+        volume_tm1 = data['volume'].shift(1) + self.epsilon
+        
+        # Compute log ratio and clip extreme values
+        log_ratio = np.log(volume_t / volume_tm1)
+        # Clip to reasonable range (-10, 10) to prevent extreme values
+        return np.clip(log_ratio, -10, 10).astype(np.float32)
+
+
+class IntradayTime:
+    """Converts timestamp to normalized minutes from market open (0.0 to 1.0)."""
+    def __init__(self, 
+                market_open: pd.Timestamp = pd.Timestamp('13:30').time(),
+                market_close: pd.Timestamp = pd.Timestamp('20:00').time()):
+        self.market_open = market_open
+        self.market_close = market_close
+        # Pre-compute total trading minutes for normalization
+        open_minutes = market_open.hour * 60 + market_open.minute
+        close_minutes = market_close.hour * 60 + market_close.minute
+        self.total_trading_minutes = close_minutes - open_minutes
+
+    def __call__(self, data: pd.DataFrame) -> pd.Series:
+        # Convert timestamp to minutes since market open
+        minutes_from_open = (data['date'].dt.hour * 60 + data['date'].dt.minute) - \
+                          (self.market_open.hour * 60 + self.market_open.minute)
+        # Normalize to 0-1 range and ensure bounds
+        normalized = minutes_from_open / self.total_trading_minutes
+        return np.clip(normalized, 0, 1).astype(np.float32)

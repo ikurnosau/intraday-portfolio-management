@@ -23,7 +23,7 @@ def log_experiment(
     
     mlflow.set_tracking_uri(uri=Constants.MLFlow.TRACKING_URI)
 
-    mlflow.set_experiment(f'{config.observability_config.experiment_name}_{time.time()}')
+    mlflow.set_experiment(f'{config.observability_config.experiment_name}')
 
     # Start an MLflow run
     with mlflow.start_run():
