@@ -66,10 +66,12 @@ data_config = DataConfig(
     train_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc), 
     in_seq_len=1,
     multi_asset_prediction=False,
-    cutoff_time=time(hour=14, minute=10),
 
     batch_size=32,
-    shuffle=False
+    shuffle=False,
+
+    cutoff_time=time(hour=14, minute=10),
+
 )
 
 model_config=ModelConfig(
@@ -106,7 +108,7 @@ train_config=TrainConfig(
         step_size=10, 
         gamma=0.5),
     metrics={ "accuracy": accuracy, "rmse": rmse },
-    num_epochs=50,
+    num_epochs=10,
     device=torch.device("cuda"),
     save_path=""
 )

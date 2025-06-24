@@ -18,10 +18,11 @@ class DataConfig:
     in_seq_len: int
     train_set_last_date: datetime
     multi_asset_prediction: bool
-    cutoff_time: datetime.time | None = None  # time-of-day cutoff for features
 
     batch_size: int
     shuffle: bool
+
+    cutoff_time: datetime.time = None  # time-of-day cutoff for features
 
 
 @dataclass
