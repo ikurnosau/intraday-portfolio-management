@@ -24,6 +24,7 @@ data_config = DataConfig(
     features={
         "close": lambda data: data['close'],
         "volume": lambda data: data['volume'],
+        # "log_volume_ret": LogVolumeReturn(),
         "return": lambda data: data['close'].pct_change()
     },
     target=Balanced3ClassClassification(base_feature='close'),
@@ -45,9 +46,10 @@ model_config=ModelConfig(
         input_dim=3,
         n_class=3, 
         hidden_dim=64,
-        num_layers=1, 
+        num_layers=2, 
         bidirectional=True,
-        dropout=0.0
+        layer_norm=True,
+        dropout=0.2
     ),
     # model=MLPClassifier(
     #     input_dim=37,

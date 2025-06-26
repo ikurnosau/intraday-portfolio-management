@@ -13,7 +13,7 @@ class WILLR:
         lowest_low = df['low'].rolling(window=self.period).min()
 
         # Calculate Williams %R
-        williams_r = ((highest_high - df['close']) / (highest_high - lowest_low)) * -100
+        williams_r = ((highest_high - df['close']) / (highest_high - lowest_low + 1e-8)) * -100
         return williams_r
 
 
@@ -25,7 +25,7 @@ class ROCR:
     def __call__(self, df):
         # Calculate the Rate of Change
         previous_values = df[self.base_feature].shift(self.period)
-        roc = (df[self.base_feature] / previous_values) * 100
+        roc = (df[self.base_feature] / (previous_values + 1e-8)) * 100
         return roc
 
 
@@ -57,7 +57,7 @@ class RSI:
         avg_loss = loss.rolling(window=self.period, min_periods=1).mean()
 
         # Use Wilder's method for smoothing
-        rs = avg_gain / avg_loss
+        rs = avg_gain / (avg_loss + 1e-8) 
         rsi = 100 - (100 / (1 + rs))
         return rsi
 
@@ -84,7 +84,7 @@ class CCI:
         tp_md = (abs(tp - tp_avg)).rolling(window=self.period).mean()
 
         # Calculate the Commodity Channel Index
-        cci = (tp - tp_avg) / (0.15 * tp_md)
+        cci = (tp - tp_avg) / (0.15 * tp_md + 1e-8)
 
         return cci
 
@@ -125,11 +125,11 @@ class ADX:
         minus_dm_smooth = minus_dm.rolling(window=self.period).mean()
 
         # Calculate +DI and -DI
-        plus_di = 100 * (plus_dm_smooth / atr)
-        minus_di = 100 * (minus_dm_smooth / atr)
+        plus_di = 100 * (plus_dm_smooth / (atr + 1e-8))
+        minus_di = 100 * (minus_dm_smooth / (atr + 1e-8))
 
         # Calculate DX
-        dx = 100 * (abs(plus_di - minus_di) / (plus_di + minus_di))
+        dx = 100 * (abs(plus_di - minus_di) / (plus_di + minus_di + 1e-8))
 
         # Calculate ADX
         adx = dx.rolling(window=self.period).mean()  # Alternatively, use an exponential moving average for smoothing
@@ -244,7 +244,7 @@ class MFI:
         pos_flow_sum = positive_flow.rolling(window=self.period).sum()
         neg_flow_sum = negative_flow.rolling(window=self.period).sum()
 
-        money_flow_ratio = pos_flow_sum / neg_flow_sum
+        money_flow_ratio = pos_flow_sum / (neg_flow_sum + 1e-8)
 
         # Calculate the Money Flow Index
         mfi = 100 - (100 / (1 + money_flow_ratio))
@@ -303,7 +303,7 @@ class VWAP:
         cumulative_volume = df[self.volume_feature].cumsum()
 
         # Calculate the VWAP
-        return cumulative_tvp / cumulative_volume
+        return cumulative_tvp / (cumulative_volume + 1e-8)
 
 
 class Oscillator:
@@ -327,7 +327,7 @@ class Oscillator:
         lowest_low = df[self.low_feature].rolling(window=self.period).min()
         highest_high = df[self.high_feature].rolling(window=self.period).max()
 
-        k_line = ((df[self.close_feature] - lowest_low) / (highest_high - lowest_low)) * 100
+        k_line = ((df[self.close_feature] - lowest_low) / (highest_high - lowest_low + 1e-8)) * 100
         if self.line_type == self.LineType.K:
             # Calculate the %K Line
             return k_line
@@ -383,27 +383,6 @@ class LogVolumeReturn:
         volume_tm1 = data['volume'].shift(1) + self.epsilon
         
         # Compute log ratio and clip extreme values
-        log_ratio = np.log(volume_t / volume_tm1)
+        log_ratio = np.log(volume_t / (volume_tm1 + 1e-8))
         # Clip to reasonable range (-10, 10) to prevent extreme values
         return np.clip(log_ratio, -10, 10).astype(np.float32)
-
-
-class IntradayTime:
-    """Converts timestamp to normalized minutes from market open (0.0 to 1.0)."""
-    def __init__(self, 
-                market_open: pd.Timestamp = pd.Timestamp('13:30').time(),
-                market_close: pd.Timestamp = pd.Timestamp('20:00').time()):
-        self.market_open = market_open
-        self.market_close = market_close
-        # Pre-compute total trading minutes for normalization
-        open_minutes = market_open.hour * 60 + market_open.minute
-        close_minutes = market_close.hour * 60 + market_close.minute
-        self.total_trading_minutes = close_minutes - open_minutes
-
-    def __call__(self, data: pd.DataFrame) -> pd.Series:
-        # Convert timestamp to minutes since market open
-        minutes_from_open = (data['date'].dt.hour * 60 + data['date'].dt.minute) - \
-                          (self.market_open.hour * 60 + self.market_open.minute)
-        # Normalize to 0-1 range and ensure bounds
-        normalized = minutes_from_open / self.total_trading_minutes
-        return np.clip(normalized, 0, 1).astype(np.float32)

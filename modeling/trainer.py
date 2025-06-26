@@ -1,9 +1,9 @@
 import torch
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
-from torch.optim.lr_scheduler import LRScheduler
+from torch.optim.lr_scheduler import LRScheduler, OneCycleLR
 from tqdm import tqdm
-from typing import Callable
+from typing import Callable, Union
 import logging
 
 
@@ -14,7 +14,7 @@ class Trainer:
                  val_loader: DataLoader,
                  loss_fn: torch.nn.Module,
                  optimizer: Optimizer,
-                 scheduler: LRScheduler,
+                 scheduler: Union[LRScheduler, dict],
                  num_epochs: int=25,
                  device: torch.device=None,
                  metrics: dict[str, Callable]=None,
@@ -24,13 +24,26 @@ class Trainer:
         self.val_loader = val_loader
         self.loss_fn = loss_fn
         self.optimizer = optimizer
-        self.scheduler = scheduler
         self.num_epochs = num_epochs
         self.metrics = metrics
         self.save_path = save_path
 
         self.device = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
         self.model.to(self.device)
+
+        # Handle scheduler configuration
+        if isinstance(scheduler, dict) and scheduler['type'] == 'OneCycleLR':
+            # If OneCycleLR config is passed, create it with correct steps_per_epoch
+            scheduler_config = scheduler.copy()
+            scheduler_config.pop('type')
+            self.scheduler = OneCycleLR(
+                optimizer=optimizer,
+                steps_per_epoch=len(train_loader),
+                epochs=num_epochs,
+                **scheduler_config
+            )
+        else:
+            self.scheduler = scheduler
 
     def train(self): 
         history = {"train_loss": [], "val_loss": []}
@@ -101,7 +114,6 @@ class Trainer:
                 for name, fn in self.metrics.items():
                     total_metrics[name] += fn(outputs, targets)
 
-        print(self.model.training)        # should be True during train(), False during eval()
         for m in self.model.modules():
             if isinstance(m, torch.nn.BatchNorm1d):
                 print("BN momentum:", m.momentum)
@@ -129,7 +141,6 @@ class Trainer:
                     for name, fn in self.metrics.items():
                         total_metrics[name] += fn(outputs, targets)
 
-            print(self.model.training)        # should be True during train(), False during eval()
             for m in self.model.modules():
                 if isinstance(m, torch.nn.BatchNorm1d):
                     print("BN momentum:", m.momentum)
