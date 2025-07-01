@@ -4,16 +4,19 @@ from enum import Enum
 
 
 class WILLR:
-    def __init__(self, period=10):
+    def __init__(self, period=10, high_feature='high', low_feature='low', close_feature='close'):
         self.period = period
+        self.high_feature = high_feature
+        self.low_feature = low_feature
+        self.close_feature = close_feature
 
     def __call__(self, df):
         # Calculate the highest high and lowest low over the period
-        highest_high = df['high'].rolling(window=self.period).max()
-        lowest_low = df['low'].rolling(window=self.period).min()
+        highest_high = df[self.high_feature].rolling(window=self.period).max()
+        lowest_low = df[self.low_feature].rolling(window=self.period).min()
 
         # Calculate Williams %R
-        williams_r = ((highest_high - df['close']) / (highest_high - lowest_low + 1e-8)) * -100
+        williams_r = ((highest_high - df[self.close_feature]) / (highest_high - lowest_low + 1e-8)) * -100
         return williams_r
 
 

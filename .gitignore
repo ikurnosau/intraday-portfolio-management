@@ -5,3 +5,4 @@ mlartifacts/
 __pycache__/
 .env
 data/raw/alpaca/bars/
+data/raw/databento/

@@ -1,12 +1,18 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
+from typing import Literal
 
 
 class DatasetPytorch(Dataset):
-    def __init__(self, X, y):
+    def __init__(self, X, y, learning_task: Literal['classification', 'regression']):
         self.X = torch.tensor(X, dtype=torch.float32)
-        self.y = torch.tensor(y, dtype=torch.long) 
+        if learning_task == 'classification':
+            self.y = torch.tensor(y, dtype=torch.long) 
+        elif learning_task == 'regression':
+            self.y = torch.tensor(y, dtype=torch.float32) 
+        else: 
+            raise ValueError(f'Invalid learning task: {learning_task}')
 
     def __len__(self):
         return len(self.X)

@@ -34,7 +34,7 @@ class DatasetCreator:
 
     def create_dataset_numpy(self, 
                              data: dict[str, pd.DataFrame],
-                             date_column: str = 'date') -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+                             date_column: str = 'date') -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """High-level orchestrator that transforms raw per-asset OHLCV data into
         numpy arrays suitable for model consumption.
 
@@ -42,9 +42,6 @@ class DatasetCreator:
         step can be unit-tested independently.
         """
 
-        # ------------------------------------------------------------------
-        # 1. Pre-process every asset independently
-        # ------------------------------------------------------------------
         processed_assets: dict[str, pd.DataFrame] = {}
         skipped_assets: list[str] = []
 
@@ -70,88 +67,100 @@ class DatasetCreator:
             f"Finished feature generation. {len(skipped_assets)} assets skipped due to insufficient rows."
         )
 
-        # ------------------------------------------------------------------
-        # 2. Train / test split per asset
-        # ------------------------------------------------------------------
         train_dict, test_dict = self._train_test_split(processed_assets)
 
-        # ------------------------------------------------------------------
-        # 3. Convert per-asset DataFrames → numpy dictionaries
-        # ------------------------------------------------------------------
-        per_asset_X_train = {a: df.drop(['date', 'target'], axis=1).to_numpy(dtype=np.float32)
-                              for a, df in train_dict.items()}
-        per_asset_y_train = {a: df['target'].to_numpy(dtype=np.float32)
-                              for a, df in train_dict.items()}
+        per_asset_X_train = {
+            a: df.drop(["date", "target", "next_return"], axis=1).to_numpy(dtype=np.float32)
+            for a, df in train_dict.items()
+        }
+        per_asset_y_train = {
+            a: df["target"].to_numpy(dtype=np.float32) for a, df in train_dict.items()
+        }
+        per_asset_next_return_train = {
+            a: df["next_return"].to_numpy(dtype=np.float32) for a, df in train_dict.items()
+        }
 
-        per_asset_X_test = {a: df.drop(['date', 'target'], axis=1).to_numpy(dtype=np.float32)
-                             for a, df in test_dict.items()}
-        per_asset_y_test = {a: df['target'].to_numpy(dtype=np.float32)
-                             for a, df in test_dict.items()}
+        per_asset_X_test = {
+            a: df.drop(["date", "target", "next_return"], axis=1).to_numpy(dtype=np.float32)
+            for a, df in test_dict.items()
+        }
+        per_asset_y_test = {
+            a: df["target"].to_numpy(dtype=np.float32) for a, df in test_dict.items()
+        }
+        per_asset_next_return_test = {
+            a: df["next_return"].to_numpy(dtype=np.float32) for a, df in test_dict.items()
+        }
 
-        # ------------------------------------------------------------------
-        # 4. Stack into final tensors
-        # ------------------------------------------------------------------
-        X_train, y_train = self._stack(per_asset_X_train, per_asset_y_train)
-        X_test, y_test = self._stack(per_asset_X_test, per_asset_y_test)
+        X_train, y_train, next_return_train = self._stack(
+            per_asset_X_train,
+            per_asset_y_train,
+            per_asset_next_return_train,
+        )
+        X_test, y_test, next_return_test = self._stack(
+            per_asset_X_test,
+            per_asset_y_test,
+            per_asset_next_return_test,
+        )
 
-        # ------------------------------------------------------------------
-        # 5. Convert to sequential format if requested
-        # ------------------------------------------------------------------
         if self.in_seq_len > 1:
-            X_train, y_train = self.transform_data_to_sequential(X_train, y_train)
-            X_test, y_test = self.transform_data_to_sequential(X_test, y_test)
+            X_train, y_train, next_return_train = self.transform_data_to_sequential(
+                X_train, y_train, next_return_train
+            )
+            X_test, y_test, next_return_test = self.transform_data_to_sequential(
+                X_test, y_test, next_return_test
+            )
 
-        return X_train, y_train, X_test, y_test
-    
-    def transform_data_to_sequential(self, X, y): 
-        X = sliding_window_view(X, window_shape=self.in_seq_len, axis=len(X.shape) - 2).swapaxes(-2, -1)
-        y = y[..., self.in_seq_len - 1:]
-
-        return X, y
+        return (
+            X_train,
+            y_train,
+            next_return_train,
+            X_test,
+            y_test,
+            next_return_test,
+        )
 
     def _process_single_asset(self, asset_df: pd.DataFrame, *, date_column: str = 'date') -> pd.DataFrame:
-        """Run full feature/target engineering pipeline for a single asset."""
-
-        # Filter to regular trading hours
         asset_df = filter_by_regular_hours(asset_df, datetime_column=date_column)
 
-        # Handle missing values (can expand later)
         asset_df = self.missing_values_handler(asset_df)
 
-        # --------------------------------------------------------------
-        # Build features DataFrame (date + engineered features)
-        # --------------------------------------------------------------
         feat_df = pd.DataFrame()
         feat_df[date_column] = pd.to_datetime(asset_df[date_column])
 
         for name, transform in self.features.items():
             feat_df[name] = transform(asset_df).astype(np.float32)
 
-        # Normalise only the feature columns
         feature_cols = list(self.features.keys())
-        feat_df.loc[:, feature_cols] = self.normalizer(feat_df[feature_cols]).astype(np.float32)
 
-        # --------------------------------------------------------------
-        # If the target transformer supports a `.fit` method, compute its
-        # parameters **only on the training slice** so that no future
-        # information leaks into label encoding.
-        # --------------------------------------------------------------
+        if hasattr(self.normalizer, "fit") and callable(getattr(self.normalizer, "fit")):
+            training_mask = feat_df[date_column] <= self.train_last_date
+            self.normalizer.fit(feat_df.loc[training_mask, feature_cols])
+            feat_df.loc[:, feature_cols] = self.normalizer.transform(
+                feat_df[feature_cols]
+            ).astype(np.float32)
+        else:
+            feat_df.loc[:, feature_cols] = self.normalizer(feat_df[feature_cols]).astype(
+                np.float32
+            )
+
         if hasattr(self.target, "fit") and callable(getattr(self.target, "fit")):
             training_slice = asset_df[pd.to_datetime(asset_df[date_column]) <= self.train_last_date]
             self.target.fit(training_slice)
 
-        # Add target
         feat_df['target'] = self.target(asset_df)
 
-        # Optional intra-day cutoff
+        base_feature = getattr(self.target, 'base_feature', 'close')
+        feat_df['next_return'] = asset_df[base_feature].pct_change().shift(-1).astype(np.float32)
+        feat_df = feat_df.dropna(subset=["next_return"]).reset_index(drop=True)
+
         if self.cutoff_time is not None:
             feat_df = feat_df[feat_df['date'].dt.time >= self.cutoff_time]
 
-        # Fill remaining NaNs with 0.5 sentinel (kept for backward compat)
         num_null_rows = feat_df.isnull().any(axis=1).sum()
         if num_null_rows:
             logging.info(f"Imputing {num_null_rows} NaN rows with 0.5 sentinel value")
-        feat_df = feat_df.fillna(0.5)
+        feat_df[feature_cols] = feat_df[feature_cols].fillna(0.5)
+        assert feat_df.isna().sum().sum() == 0, "There are still NaNs in the dataset"
 
         return feat_df.reset_index(drop=True)
 
@@ -167,14 +176,42 @@ class DatasetCreator:
         }
         return train_dict, test_dict
 
-    def _stack(self, per_asset_X: dict[str, np.ndarray], per_asset_y: dict[str, np.ndarray]):
-        """Combine per-asset arrays into the final model-ready structure."""
+    def _stack(
+        self,
+        per_asset_X: dict[str, np.ndarray],
+        per_asset_y: dict[str, np.ndarray],
+        per_asset_next_ret: dict[str, np.ndarray],
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Combine per-asset arrays into final tensors.
+
+        X  → (asset, batch, features) or (batch, features)
+        y  → (asset, batch)          or (batch)
+        nr → (asset, batch)          or (batch)
+        """
+
         if self.multi_asset_prediction:
-            # shape → (asset, batch, features)
             X = np.stack(list(per_asset_X.values()), axis=0)
             y = np.stack(list(per_asset_y.values()), axis=0)
+            next_ret = np.stack(list(per_asset_next_ret.values()), axis=0)
         else:
-            # shape → (batch, features)
             X = np.vstack(list(per_asset_X.values()))
-            y = np.vstack(list(per_asset_y.values())).flatten()
-        return X.astype(np.float32), y.astype(np.float32)
+            y = np.concatenate(list(per_asset_y.values()))
+            next_ret = np.concatenate(list(per_asset_next_ret.values()))
+
+        return X.astype(np.float32), y.astype(np.float32), next_ret.astype(np.float32)
+
+    def transform_data_to_sequential(self, X: np.ndarray, y: np.ndarray, next_ret: np.ndarray):
+        """Convert flat [batch, feat] data into sliding-window sequences along the *batch* axis.
+
+        The sliding window is applied one axis before the last (which is the feature dimension). For
+        multi-asset mode the layout is (asset, batch, feat) so `axis=-2` still refers to batch.
+        """
+
+        X_seq = (
+            sliding_window_view(X, window_shape=self.in_seq_len, axis=len(X.shape) - 2)
+            .swapaxes(-2, -1)
+        )
+        y_seq = y[..., self.in_seq_len - 1:]
+        next_ret_seq = next_ret[..., self.in_seq_len - 1:]
+
+        return X_seq, y_seq, next_ret_seq

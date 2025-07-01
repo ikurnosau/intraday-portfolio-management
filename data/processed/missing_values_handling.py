@@ -3,6 +3,11 @@ import logging
 from datetime import timedelta
 
 
+class DummyMissingValuesHandler:
+    def __call__(self, data: pd.DataFrame) -> pd.DataFrame:
+        return data.dropna()
+
+
 class ForwardFillFlatBars:
     def __call__(self, data: pd.DataFrame) -> pd.DataFrame:
         data_orig = data.copy()
@@ -20,6 +25,9 @@ class ForwardFillFlatBars:
         data_filled['close'] = data_filled['close'].ffill()
 
         missing = data_filled['volume'].isna()
+
+        logging.info(f"Imputing {missing.sum()} NaN rows out of {len(data_filled)} with forward fill..")
+
         data_filled.loc[missing, 'open'] = data_filled.loc[missing, 'close']
         data_filled.loc[missing, 'high'] = data_filled.loc[missing, 'close']
         data_filled.loc[missing, 'low'] = data_filled.loc[missing, 'close']

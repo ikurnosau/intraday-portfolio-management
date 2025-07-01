@@ -2,33 +2,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class TemporalSpatialClassifier(nn.Module):
-    """A light-weight model that processes a portfolio tensor
-    (batch, asset, seq_len, feat) and outputs class logits per asset.
-
-    Architecture:
-      1. Shared LSTM encodes each asset's sequence → latent vector.
-      2. (Optional) Single multi-head self-attention layer lets assets attend to
-         each other within the same time slice (spatial dependency).
-      3. Linear layer produces logits for n_class per asset.
-
-    Args:
-        input_dim: Number of input features per time step
-        hidden_dim: Size of LSTM hidden state
-        n_class: Number of output classes
-        lstm_layers: Number of stacked LSTM layers
-        bidirectional: Whether to use bidirectional LSTM
-        num_heads: Number of attention heads for spatial attention
-        dropout: Dropout probability
-        use_spatial_attention: Whether to use spatial attention layer (default: True)
-        num_assets: Number of assets (optional)
-        asset_embed_dim: Dimension of asset embedding (optional)
-    """
-
+class TemporalSpatial(nn.Module):
     def __init__(self,
                  input_dim: int,
                  hidden_dim: int = 64,
-                 n_class: int = 3,
+                 output_dim: int = 1,
                  lstm_layers: int = 1,
                  bidirectional: bool = False,
                  num_heads: int = 4,
@@ -38,7 +16,7 @@ class TemporalSpatialClassifier(nn.Module):
                  asset_embed_dim: int | None = None):
         super().__init__()
         self.hidden_dim = hidden_dim
-        self.n_class = n_class
+        self.output_dim = output_dim
         self.num_directions = 2 if bidirectional else 1
         self.use_spatial_attention = use_spatial_attention
 
@@ -79,7 +57,7 @@ class TemporalSpatialClassifier(nn.Module):
             )
 
         # 3. Output projection
-        self.fc = nn.Linear(hidden_dim * self.num_directions, n_class)
+        self.fc = nn.Linear(hidden_dim * self.num_directions, output_dim)
 
         # Normalisation + regularisation
         self.norm = nn.LayerNorm(hidden_dim * self.num_directions)
@@ -91,19 +69,19 @@ class TemporalSpatialClassifier(nn.Module):
         Args:
             x: Tensor of shape (batch, asset, seq_len, feat)
         Returns:
-            logits: Tensor of shape (batch, asset, n_class)
+            logits: Tensor of shape (batch, asset, output_dim)
         """
         B, A, T, F = x.shape
 
         # (B*A, T, F) → LSTM → (B*A, H)
-        x_flat = x.view(B * A, T, F)
+        x_flat = x.reshape(B * A, T, F)
         out, _ = self.lstm(x_flat)
         h = out[:, -1, :]  # last time step (B*A, H)
         h = self.norm(h)
         h = self.dropout(h)
 
         # reshape to (B, A, H)
-        h = h.view(B, A, -1)
+        h = h.reshape(B, A, -1)
 
         # Add asset embedding if enabled ------------------------------------------------------------------
         if self.use_asset_embedding:
@@ -120,21 +98,11 @@ class TemporalSpatialClassifier(nn.Module):
             h = self.norm(h_attn + h)  # residual + norm
             h = self.dropout(h)
 
-        logits = self.fc(h)  # (B, A, n_class)
-        return logits
+        out = self.fc(h)  # (B, A, output_dim)
 
+        # Regression convenience: squeeze the trailing dim so that the shape
+        # matches common loss functions (B, A) instead of (B, A, 1).
+        if self.output_dim == 1:
+            out = out.squeeze(-1)  # (B, A)
 
-if __name__ == "__main__":
-    # Test both configurations
-    B, A, T, F = 8, 50, 60, 4
-    dummy = torch.randn(B, A, T, F)
-    
-    # With spatial attention
-    model_with_attn = TemporalSpatialClassifier(input_dim=F, hidden_dim=64, n_class=3, use_spatial_attention=True)
-    out_with_attn = model_with_attn(dummy)
-    print("Output shape with attention:", out_with_attn.shape)  # expected (8, 50, 3)
-    
-    # Without spatial attention
-    model_no_attn = TemporalSpatialClassifier(input_dim=F, hidden_dim=64, n_class=3, use_spatial_attention=False)
-    out_no_attn = model_no_attn(dummy)
-    print("Output shape without attention:", out_no_attn.shape)  # expected (8, 50, 3) 
+        return out
