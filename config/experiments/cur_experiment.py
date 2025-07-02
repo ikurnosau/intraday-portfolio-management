@@ -4,12 +4,13 @@ sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 
 from datetime import datetime, timezone, time
 import torch
+import numpy as np
 
 from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig, ObservabilityConfig
 from config.constants import Constants
 from data.processed.indicators import *
 from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification
-from data.processed.normalization import MinMaxNormalizer, ZScoreOverWindowNormalizer
+from data.processed.normalization import MinMaxNormalizer, ZScoreOverWindowNormalizer, MinMaxNormalizerOverWindow
 from data.processed.missing_values_handling import ForwardFillFlatBars, DummyMissingValuesHandler
 from modeling.models.tsa_classifier import TemporalSpatial
 from modeling.models.lstm import LSTMClassifier
@@ -22,49 +23,42 @@ data_config = DataConfig(
     end=datetime(2025, 6, 1),
 
     features={
-        "open": lambda data: data['open'],
-        "high": lambda data: data['high'],
-        "low": lambda data: data['low'],
-        "close": lambda data: data['close'],
-        "volume": lambda data: data['volume'],
-        "return": lambda data: data['close'].pct_change(),
-        "OBV": OBV(),
+        # --- Raw micro-price & volume dynamics ------------------------------------------------------
+        "log_ret": lambda df: np.log(df['close'] / df['close'].shift(1)),
+        "hl_range": lambda df: (df['high'] - df['low']) / df['close'],
+        "close_open": lambda df: (df['close'] - df['open']) / df['open'],
+        "vol_delta": lambda df: np.log(df['volume'] / df['volume'].shift(1)),
+
+        # --- Momentum & trend -----------------------------------------------------------------------
+        "EMA_fast": EMA(3),              # fast EMA (≈ 3-min)
+        "EMA_slow": EMA(30),            # slow EMA adjusted for 60-bar window
+        "RSI2": RSI(2),
         "RSI6": RSI(6),
-        "RSI12": RSI(12),
-        "EMA3": EMA(3),
-        "EMA6": EMA(6),
-        "EMA12": EMA(12),
-        "ATR14": ATR(14),
-        "MFI": MFI(14),
-        "ADX14": ADX(14),
-        "ADX20": ADX(20),
-        "MOM1": MOM(1),
-        "MOM3": MOM(3),
-        "CCI12": CCI(12),
-        "CCI20": CCI(20),
-        "ROCR12": ROCR(12),
-        "MACD": MACD(),
-        "WILLR": WILLR(10),
-        "TRIX": TRIX(20),
-        "BB_LOW": BollingerBand(BollingerBand.BBType.LOWER),
-        "BB_UP": BollingerBand(BollingerBand.BBType.UPPER),
-        "EMA_26": EMA(26, base_feature="close"),
-        "VWAP": VWAP(high_feature='high', low_feature='low', close_feature='close'),
-        "ATR_28": ATR(28, high_feature='high', low_feature='low', close_feature='close'),
-        "FRL_0": FRL(FRL.FIB_RATIOS[0], high_feature='high', low_feature='low', close_feature='close'),
-        "FRL_1": FRL(FRL.FIB_RATIOS[1], high_feature='high', low_feature='low', close_feature='close'),
-        "FRL_2": FRL(FRL.FIB_RATIOS[2], high_feature='high', low_feature='low', close_feature='close'),
-        "FRL_3": FRL(FRL.FIB_RATIOS[3], high_feature='high', low_feature='low', close_feature='close'),
-        "FRL_4": FRL(FRL.FIB_RATIOS[4], high_feature='high', low_feature='low', close_feature='close'),
-        "RSI_28": RSI(24),
-        "Oscillator_K": Oscillator(Oscillator.LineType.K),
-        "Oscillator_D": Oscillator(Oscillator.LineType.D),
+        # Optionally uncomment to add a slow oscillator now that the window is 60
+        # "RSI12": RSI(12),
+
+        # --- Volatility ----------------------------------------------------------------------------
+        "realvol20": lambda df: df['close'].pct_change().rolling(20).std().astype(np.float32),
+
+        # --- Microstructure & order-flow -----------------------------------------------------------
+        "VWAP_dist": lambda df: (df['close'] - VWAP()(df)) / df['close'],
+        "loc_in_range": lambda df: (df['close'] - df['low']) / (df['high'] - df['low'] + 1e-8),
+
+        # --- Time-of-day cyclic encodings -----------------------------------------------------------
+        "tod_sin": lambda df: np.sin(2 * np.pi * (df['date'].dt.hour * 60 + df['date'].dt.minute) / (6.5 * 60)),
+        "tod_cos": lambda df: np.cos(2 * np.pi * (df['date'].dt.hour * 60 + df['date'].dt.minute) / (6.5 * 60)),
+
+        # --- Derived features ----------------------------------------------------------------------
+        "ema_slope": lambda df: EMA(3)(df) - EMA(15)(df),     # or ratio
+        "vol_slope": lambda df: df['close'].pct_change()
+                             .rolling(10).std()
+                             / (df['close'].pct_change().rolling(20).std() + 1e-8)
     },
     target=Balanced5ClassClassification(base_feature='close', horizon=1),
-    normalizer=MinMaxNormalizer(fit_feature=None),
+    normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
     missing_values_handler=ForwardFillFlatBars(),
     train_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc), 
-    in_seq_len=30,
+    in_seq_len=60,
     multi_asset_prediction=True,
 
     cutoff_time=time(hour=14, minute=10),
@@ -109,20 +103,22 @@ cur_optimizer = torch.optim.AdamW(
 train_config = TrainConfig(
     loss_fn=torch.nn.MSELoss(),
     optimizer=cur_optimizer,
-    scheduler=torch.optim.lr_scheduler.ReduceLROnPlateau(
-        cur_optimizer,
-        mode="min",
-        factor=0.5,
-        patience=5,
-        verbose=True,
-    ),
+    scheduler={
+        "type": "OneCycleLR",
+        "max_lr": 3e-3,        # peak learning rate
+        "pct_start": 0.1,       # 10 % warm-up
+        "div_factor": 25,       # initial LR = max_lr / 25
+        "final_div_factor": 1e3,# final LR = max_lr / 1000
+        "anneal_strategy": "cos",
+        "cycle_momentum": False,
+    },
     metrics={"rmse": rmse_regression},
-    num_epochs=100,
+    num_epochs=20,
 
     device=torch.device("cuda"),
     cudnn_benchmark=True,
 
-    batch_size=32,
+    batch_size=128,
     shuffle=True,
     num_workers=8,
     prefetch_factor=4,
