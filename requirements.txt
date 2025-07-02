@@ -1,8 +1,8 @@
 pandas
-numpy
+numpy<2.0
 scikit-learn
 lightgbm
 tqdm
-mlflow
-alpaca-trade-api
-python-dotenv 
+alpaca-py
+python-dotenv
+blinker>=1.4 

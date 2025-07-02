@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
-from torch.optim.lr_scheduler import LRScheduler, OneCycleLR
+from torch.optim.lr_scheduler import LRScheduler, OneCycleLR, ReduceLROnPlateau
 from tqdm import tqdm
 from typing import Callable, Union
 import logging
@@ -61,7 +61,10 @@ class Trainer:
             val_loss, val_metrics = self.evaluate()
 
             if self.scheduler is not None:
-                self.scheduler.step()
+                if isinstance(self.scheduler, ReduceLROnPlateau):
+                    self.scheduler.step(val_loss)
+                else:
+                    self.scheduler.step()
 
             # Record history
             history["train_loss"].append(train_loss)
@@ -98,7 +101,7 @@ class Trainer:
         total_metrics = {name: 0.0 for name in (self.metrics or {})}
 
         for inputs, targets in tqdm(self.train_loader, desc="Training", leave=False):
-            inputs, targets = inputs.to(self.device), targets.to(self.device)
+            inputs, targets = inputs.to(self.device, non_blocking=True), targets.to(self.device, non_blocking=True)
             self.optimizer.zero_grad()
 
             outputs = self.model(inputs)
@@ -131,7 +134,7 @@ class Trainer:
 
         with torch.no_grad():
             for inputs, targets in tqdm(self.val_loader, desc="Evaluating", leave=False):
-                inputs, targets = inputs.to(self.device), targets.to(self.device)
+                inputs, targets = inputs.to(self.device, non_blocking=True), targets.to(self.device, non_blocking=True)
                 outputs = self.model(inputs)
                 loss = self.loss_fn(outputs, targets)
 

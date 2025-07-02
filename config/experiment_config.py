@@ -19,9 +19,6 @@ class DataConfig:
     train_set_last_date: datetime
     multi_asset_prediction: bool
 
-    batch_size: int
-    shuffle: bool
-
     cutoff_time: datetime.time = None  # time-of-day cutoff for features
 
 
@@ -32,14 +29,31 @@ class ModelConfig:
 
 
 @dataclass
-class TrainConfig: 
+class TrainConfig:
+    # --- optimisation ------------------------------------------------------
     loss_fn: torch.nn.Module
     optimizer: Optimizer
-    scheduler: LRScheduler
+    scheduler: LRScheduler | dict  # allow passing configuration dicts
     num_epochs: int
+
+    # --- hardware / runtime ------------------------------------------------
     device: torch.device
-    metrics: dict[str, Callable]
-    save_path: str
+    cudnn_benchmark: bool = False  # enable cuDNN autotuner for fixed shapes
+
+    # --- metric callbacks ---------------------------------------------------
+    metrics: dict[str, Callable] | None = None
+
+    # --- DataLoader parameters ---------------------------------------------
+    batch_size: int | None = None           # fallback to DataConfig.batch_size
+    shuffle: bool | None = None             # fallback to DataConfig.shuffle
+    num_workers: int = 0
+    prefetch_factor: int = 2
+    pin_memory: bool = False
+    persistent_workers: bool = False
+    drop_last: bool = False
+
+    # --- misc --------------------------------------------------------------
+    save_path: str | None = None
 
 
 @dataclass

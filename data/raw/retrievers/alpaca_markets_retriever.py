@@ -14,6 +14,15 @@ import pickle
 
 from config.constants import Constants
 
+class _NumpyCoreRedirectingUnpickler(pickle.Unpickler):
+    """Unpickler that maps obsolete ``numpy._core`` → ``numpy.core``."""
+
+    def find_class(self, module, name):
+        # Redirect *any* submodule that starts with the obsolete prefix
+        if module.startswith("numpy._core"):
+            module = module.replace("numpy._core", "numpy.core", 1)
+        return super().find_class(module, name)
+
 
 class AlpacaMarketsRetriever:
     FEED = 'sip'
@@ -31,7 +40,7 @@ class AlpacaMarketsRetriever:
                         start: datetime,
                         end: datetime): 
         return f'{self.timeframe}_{start.date()}-{end.date()}_' \
-                + f'{'+'.join(symbol_or_symbols if not isinstance(symbol_or_symbols, str) else [symbol_or_symbols])[:100]}.pkl'
+                + f"{'+'.join(symbol_or_symbols if not isinstance(symbol_or_symbols, str) else [symbol_or_symbols])[:100]}.pkl"
     
     @staticmethod
     def save_data(payload: object, save_dir: str, file_name: str): 
@@ -43,8 +52,8 @@ class AlpacaMarketsRetriever:
 
     @staticmethod
     def load_data(save_dir: str, file_name: str) -> object: 
-        with open(os.path.join(save_dir, file_name), 'rb') as input_file: 
-            return pickle.load(input_file)
+        with open(os.path.join(save_dir, file_name), 'rb') as input_file:
+            return _NumpyCoreRedirectingUnpickler(input_file).load()
 
     def get_all_symbols(self) -> list[str]:
         trading_client = TradingClient(self.api_key, self.api_key)

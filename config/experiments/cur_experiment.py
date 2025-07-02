@@ -67,9 +67,6 @@ data_config = DataConfig(
     in_seq_len=30,
     multi_asset_prediction=True,
 
-    batch_size=32,
-    shuffle=True,
-
     cutoff_time=time(hour=14, minute=10),
 )
 
@@ -121,7 +118,18 @@ train_config = TrainConfig(
     ),
     metrics={"rmse": rmse_regression},
     num_epochs=100,
+
     device=torch.device("cuda"),
+    cudnn_benchmark=True,
+
+    batch_size=32,
+    shuffle=True,
+    num_workers=8,
+    prefetch_factor=4,
+    pin_memory=True,
+    persistent_workers=True,
+    drop_last=True,
+    
     save_path="",
 )
 

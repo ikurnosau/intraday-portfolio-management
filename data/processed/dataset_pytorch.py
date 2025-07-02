@@ -20,5 +20,13 @@ class DatasetPytorch(Dataset):
     def __getitem__(self, idx):
         return self.X[idx], self.y[idx]
     
-    def as_dataloader(self, batch_size: int=32, shuffle: bool=False): 
-        return DataLoader(self, batch_size=batch_size, shuffle=shuffle)
+    def as_dataloader(self, batch_size: int=32, shuffle: bool=True, num_workers=8, prefetch_factor=4, pin_memory=True, persistent_workers=True, drop_last=True): 
+        return DataLoader(
+            self, 
+            batch_size=batch_size, 
+            shuffle=shuffle,
+            num_workers=num_workers,
+            prefetch_factor=prefetch_factor,
+            pin_memory=pin_memory,
+            persistent_workers=persistent_workers,
+            drop_last=drop_last)
