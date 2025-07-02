@@ -11,6 +11,7 @@ import pandas as pd
 from dotenv import load_dotenv
 import os
 import pickle 
+import gdown
 
 from config.constants import Constants
 
@@ -24,16 +25,30 @@ class _NumpyCoreRedirectingUnpickler(pickle.Unpickler):
         return super().find_class(module, name)
 
 
+def _download_from_gdrive():
+    file_id = "1On6h2pn05svQFj20gU_iyCFuWGwhEYPk"
+    url = f'https://drive.google.com/uc?id={file_id}'
+    output_dir = '../data/raw/alpaca/bars'
+    file_name = "1Min_2024-06-01-2025-06-01_AAPL+MSFT+NVDA+GOOGL+GOOG+META+AVGO+AMD+TSM+QCOM+ORCL+INTC+CSCO+IBM+MU+ADBE+TXN+CRM+PANW+AMAT+SQ+PYP.pkl"
+    output_path = os.path.join(output_dir, file_name)
+    os.makedirs(output_dir, exist_ok=True)
+    gdown.download(url, output_path, quiet=False)
+
+
 class AlpacaMarketsRetriever:
     FEED = 'sip'
 
-    def __init__(self, timeframe: TimeFrame=TimeFrame.Minute):
+    def __init__(self, timeframe: TimeFrame=TimeFrame.Minute, download_from_gdrive: bool=False):
         load_dotenv()
         self.api_key = os.getenv('API_KEY')
         self.api_secret = os.getenv('API_SECRET')
 
         self.timeframe = timeframe
-        self.client = StockHistoricalDataClient(self.api_key, self.api_secret)
+
+        if not download_from_gdrive:
+            self.client = StockHistoricalDataClient(self.api_key, self.api_secret)
+        else:
+            _download_from_gdrive()
 
     def build_file_name(self,
                         symbol_or_symbols: str | list[str],
