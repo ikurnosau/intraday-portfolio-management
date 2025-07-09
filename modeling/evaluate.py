@@ -103,12 +103,13 @@ def evaluate_torch_regressor_multiasset(model: torch.nn.Module,
                                         X_test: Union[np.ndarray, torch.Tensor],
                                         y_test: Union[np.ndarray, torch.Tensor],
                                         test_return: Union[np.ndarray, torch.Tensor],
+                                        test_spread: Union[np.ndarray, torch.Tensor],
                                         trade_asset_count: int = 5) -> None:
     """Evaluate a trained *multi-asset* PyTorch regressor.
 
     The model must output a tensor of shape ``(batch, asset)`` (or with an extra
     singleton dimension at the end which will be squeezed).  *y_train* /
-    *y_test* as well as *test_return* must have the same layout.
+    *y_test* as well as *test_return* / *test_spread* must have the same layout.
 
     For every time step (row in the batch dimension) the ``trade_asset_count``
     assets whose predictions deviate the most (in absolute terms) from the
@@ -176,14 +177,17 @@ def evaluate_torch_regressor_multiasset(model: torch.nn.Module,
     y_train_np_full = _to_np(y_train)
     y_test_np_full = _to_np(y_test)
     test_return_np_full = _to_np(test_return)
+    test_spread_np_full = _to_np(test_spread)
 
     y_train_sel = y_train_np_full[rows, train_topk_idx]
     y_test_sel = y_test_np_full[np.arange(y_test_np_full.shape[0])[:, None], test_topk_idx]
     test_return_sel = test_return_np_full[np.arange(test_return_np_full.shape[0])[:, None], test_topk_idx]
+    test_spread_sel = test_spread_np_full[np.arange(test_spread_np_full.shape[0])[:, None], test_topk_idx]
 
     y_train_np = y_train_sel.reshape(-1)
     y_test_np = y_test_sel.reshape(-1)
     test_return_np = test_return_sel.reshape(-1)
+    test_spread_np = test_spread_sel.reshape(-1)
 
     # ------------------------------------------------------------------
     # Trading strategy: trade every selected asset (direction by sign)
@@ -197,10 +201,12 @@ def evaluate_torch_regressor_multiasset(model: torch.nn.Module,
     test_rmse = root_mean_squared_error(y_test_np, test_preds)
     baseline_rmse = root_mean_squared_error(y_test_np, np.full_like(y_test_np, y_test_np.mean()))
 
-    expected_return = np.mean(test_return_np * actions)
+    # Deduct transaction cost (spread) from realised returns
+    expected_return = np.mean(test_return_np * actions - test_spread_np)
+    expected_return_without_spread = np.mean(test_return_np * actions)
 
     print(
         f"Train rmse: {train_rmse}, Test rmse: {test_rmse}, Baseline rmse: {baseline_rmse}\n"
-        f"Expected return: {expected_return}, Baseline return: {abs(test_return_np.mean())}, "
+        f"Expected return: {expected_return}, Expected return without spread: {expected_return_without_spread}, Baseline return: {abs(test_return_np.mean())}, "
         f"Max possible return {abs(test_return_np).mean()}"
     )

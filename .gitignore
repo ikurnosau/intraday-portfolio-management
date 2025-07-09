@@ -4,5 +4,6 @@ mlartifacts/
 .vscode/
 __pycache__/
 .env
-data/raw/alpaca/bars/
+data/raw/alpaca/
+data/raw/alpaca/
 data/raw/databento/

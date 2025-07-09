@@ -34,7 +34,16 @@ class DatasetCreator:
 
     def create_dataset_numpy(self, 
                              data: dict[str, pd.DataFrame],
-                             date_column: str = 'date') -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+                             date_column: str = 'date') -> Tuple[
+                                 np.ndarray,
+                                 np.ndarray,
+                                 np.ndarray,
+                                 np.ndarray,
+                                 np.ndarray,
+                                 np.ndarray,
+                                 np.ndarray,
+                                 np.ndarray,
+                             ]:
         """High-level orchestrator that transforms raw per-asset OHLCV data into
         numpy arrays suitable for model consumption.
 
@@ -70,7 +79,7 @@ class DatasetCreator:
         train_dict, test_dict = self._train_test_split(processed_assets)
 
         per_asset_X_train = {
-            a: df.drop(["date", "target", "next_return"], axis=1).to_numpy(dtype=np.float32)
+            a: df.drop(["date", "target", "next_return", "spread"], axis=1).to_numpy(dtype=np.float32)
             for a, df in train_dict.items()
         }
         per_asset_y_train = {
@@ -79,9 +88,12 @@ class DatasetCreator:
         per_asset_next_return_train = {
             a: df["next_return"].to_numpy(dtype=np.float32) for a, df in train_dict.items()
         }
+        per_asset_spread_train = {
+            a: df["spread"].to_numpy(dtype=np.float32) for a, df in train_dict.items()
+        }
 
         per_asset_X_test = {
-            a: df.drop(["date", "target", "next_return"], axis=1).to_numpy(dtype=np.float32)
+            a: df.drop(["date", "target", "next_return", "spread"], axis=1).to_numpy(dtype=np.float32)
             for a, df in test_dict.items()
         }
         per_asset_y_test = {
@@ -90,33 +102,51 @@ class DatasetCreator:
         per_asset_next_return_test = {
             a: df["next_return"].to_numpy(dtype=np.float32) for a, df in test_dict.items()
         }
+        per_asset_spread_test = {
+            a: df["spread"].to_numpy(dtype=np.float32) for a, df in test_dict.items()
+        }
 
-        X_train, y_train, next_return_train = self._stack(
+        X_train, y_train, next_return_train, spread_train = self._stack(
             per_asset_X_train,
             per_asset_y_train,
             per_asset_next_return_train,
+            per_asset_spread_train,
         )
-        X_test, y_test, next_return_test = self._stack(
+        X_test, y_test, next_return_test, spread_test = self._stack(
             per_asset_X_test,
             per_asset_y_test,
             per_asset_next_return_test,
+            per_asset_spread_test,
         )
 
+        # Convert to sequential format if required
         if self.in_seq_len > 1:
-            X_train, y_train, next_return_train = self.transform_data_to_sequential(
-                X_train, y_train, next_return_train
+            (
+                X_train,
+                y_train,
+                next_return_train,
+                spread_train,
+            ) = self.transform_data_to_sequential(
+                X_train, y_train, next_return_train, spread_train
             )
-            X_test, y_test, next_return_test = self.transform_data_to_sequential(
-                X_test, y_test, next_return_test
+            (
+                X_test,
+                y_test,
+                next_return_test,
+                spread_test,
+            ) = self.transform_data_to_sequential(
+                X_test, y_test, next_return_test, spread_test
             )
 
         return (
             X_train,
             y_train,
             next_return_train,
+            spread_train,
             X_test,
             y_test,
             next_return_test,
+            spread_test,
         )
 
     def _process_single_asset(self, asset_df: pd.DataFrame, *, date_column: str = 'date') -> pd.DataFrame:
@@ -153,6 +183,15 @@ class DatasetCreator:
         feat_df['next_return'] = asset_df[base_feature].pct_change().shift(-1).astype(np.float32)
         feat_df = feat_df.dropna(subset=["next_return"]).reset_index(drop=True)
 
+        if {'ask_price', 'bid_price'}.issubset(asset_df.columns):
+            feat_df['spread'] = (
+                (asset_df['ask_price'] - asset_df['bid_price']) / asset_df['ask_price']
+            )
+        else:
+            logging.warning("'ask_price' or 'bid_price' column missing; filling spread with 0.")
+            feat_df['spread'] = 0.0
+        feat_df['spread'] = feat_df['spread'].fillna(0.0).astype(np.float32)
+
         if self.cutoff_time is not None:
             feat_df = feat_df[feat_df['date'].dt.time >= self.cutoff_time]
 
@@ -181,7 +220,8 @@ class DatasetCreator:
         per_asset_X: dict[str, np.ndarray],
         per_asset_y: dict[str, np.ndarray],
         per_asset_next_ret: dict[str, np.ndarray],
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        per_asset_spread: dict[str, np.ndarray],
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Combine per-asset arrays into final tensors.
 
         X  → (asset, batch, features) or (batch, features)
@@ -193,14 +233,16 @@ class DatasetCreator:
             X = np.stack(list(per_asset_X.values()), axis=0)
             y = np.stack(list(per_asset_y.values()), axis=0)
             next_ret = np.stack(list(per_asset_next_ret.values()), axis=0)
+            spread = np.stack(list(per_asset_spread.values()), axis=0)
         else:
             X = np.vstack(list(per_asset_X.values()))
             y = np.concatenate(list(per_asset_y.values()))
             next_ret = np.concatenate(list(per_asset_next_ret.values()))
+            spread = np.concatenate(list(per_asset_spread.values()))
 
-        return X.astype(np.float32), y.astype(np.float32), next_ret.astype(np.float32)
+        return X.astype(np.float32), y.astype(np.float32), next_ret.astype(np.float32), spread.astype(np.float32)
 
-    def transform_data_to_sequential(self, X: np.ndarray, y: np.ndarray, next_ret: np.ndarray):
+    def transform_data_to_sequential(self, X: np.ndarray, y: np.ndarray, next_ret: np.ndarray, spread: np.ndarray):
         """Convert flat [batch, feat] data into sliding-window sequences along the *batch* axis.
 
         The sliding window is applied one axis before the last (which is the feature dimension). For
@@ -213,5 +255,6 @@ class DatasetCreator:
         )
         y_seq = y[..., self.in_seq_len - 1:]
         next_ret_seq = next_ret[..., self.in_seq_len - 1:]
+        spread_seq = spread[..., self.in_seq_len - 1:]
 
-        return X_seq, y_seq, next_ret_seq
+        return X_seq, y_seq, next_ret_seq, spread_seq

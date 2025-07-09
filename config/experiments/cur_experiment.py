@@ -18,7 +18,7 @@ from modeling.models.mlp import MLP
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
 data_config = DataConfig(
-    symbol_or_symbols=Constants.Data.MOST_LIQUID_TECH_STOCKS,
+    symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
     start=datetime(2024, 6, 1),
     end=datetime(2025, 6, 1),
 
@@ -27,7 +27,7 @@ data_config = DataConfig(
         "log_ret": lambda df: np.log(df['close'] / df['close'].shift(1)),
         "hl_range": lambda df: (df['high'] - df['low']) / df['close'],
         "close_open": lambda df: (df['close'] - df['open']) / df['open'],
-        "vol_delta": lambda df: np.log(df['volume'] / df['volume'].shift(1)),
+        "vol_delta": lambda df: np.log(df['volume'] / (df['volume'].shift(1) + 1e-8) + 1e-8),
 
         # --- Momentum & trend -----------------------------------------------------------------------
         "EMA_fast": EMA(3),              # fast EMA (≈ 3-min)
@@ -64,11 +64,6 @@ data_config = DataConfig(
     cutoff_time=time(hour=14, minute=10),
 )
 
-# ------------------------------------------------------------------
-# Number of distinct assets *present* in the input tensor. Must match the
-# 2nd dimension "asset" so that the asset embedding indices (0…A-1) are valid.
-# ------------------------------------------------------------------
-NUM_ASSETS = len(data_config.symbol_or_symbols) - 1
 
 model_config = ModelConfig(
     model=TemporalSpatial(
@@ -79,17 +74,9 @@ model_config = ModelConfig(
         bidirectional=True,
         dropout=0.2,
         use_spatial_attention=True,
-        num_assets=NUM_ASSETS,
+        num_assets=len(data_config.symbol_or_symbols),
         asset_embed_dim=16,
     ),
-    # model=MLP(
-    #     input_dim=len(data_config.features),
-    #     output_dim=1,
-    #     hidden_dims=[128, 64],
-    #     dropout=0.1,
-    #     activation=torch.nn.ReLU(inplace=True),
-    #     batch_norm=False
-    # ),
     registered_model_name="TemporalSpatial Regressor",
 )
 

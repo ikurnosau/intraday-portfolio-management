@@ -19,12 +19,24 @@ class Constants:
             "NET", "OKTA", "PLTR", "HPQ", "DELL"
         ]
 
+        LOWEST_VOL_TO_SPREAD_MAY_JUNE = [
+            'AAPL', 'AMD', 'BABA', 'BITU', 'C', 'CSCO', 
+            'DAL', 'DIA', 'GLD', 'GOOG', 'IJR', 'MARA', 
+            'MRVL', 'MU', 'NEE', 'NKE', 'NVDA', 'ON', 
+            'PLTR', 'PYPL', 'QLD', 'QQQ', 'QQQM', 
+            'RKLB', 'RSP', 'SMCI', 'SMH', 'SOXL', 
+            'SOXX', 'SPXL', 'SPY', 'TMF', 'TNA', 
+            'TQQQ', 'TSLA', 'UBER', 'UDOW', 'UPRO', 
+            'VOO', 'WFC', 'XBI', 'XLC', 'XLE', 'XLI', 
+            'XLK', 'XLU', 'XLV', 'XLY', 'XOM', 'XRT']
+
         REGULAR_TRADING_HOURS_START = pd.to_datetime("13:30:00").time()
         REGULAR_TRADING_HOURS_END = pd.to_datetime("20:00:00").time()
         
         class Retrieving: 
             class Alpaca:
                 BARS_SAVE_DIR = '../data/raw/alpaca/bars'
+                BARS_WITH_QUOTES_SAVE_DIR = '../data/raw/alpaca/bars_with_quotes'
 
     class MLFlow: 
         TRACKING_URI = "http://127.0.0.1:8080"

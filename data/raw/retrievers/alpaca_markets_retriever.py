@@ -12,6 +12,8 @@ from dotenv import load_dotenv
 import os
 import pickle 
 import gdown
+import logging
+import numpy as np
 
 from config.constants import Constants
 
@@ -26,10 +28,10 @@ class _NumpyCoreRedirectingUnpickler(pickle.Unpickler):
 
 
 def _download_from_gdrive():
-    file_id = "1On6h2pn05svQFj20gU_iyCFuWGwhEYPk"
+    file_id = "1oE69lvgomUzIqJHCOJ4N1g6opWuv1coW"
     url = f'https://drive.google.com/uc?id={file_id}'
-    output_dir = '../data/raw/alpaca/bars'
-    file_name = "1Min_2024-06-01-2025-06-01_AAPL+MSFT+NVDA+GOOGL+GOOG+META+AVGO+AMD+TSM+QCOM+ORCL+INTC+CSCO+IBM+MU+ADBE+TXN+CRM+PANW+AMAT+SQ+PYP.pkl"
+    output_dir = '../data/raw/alpaca/bars_with_quotes'
+    file_name = "1Min_2024-06-01-2025-06-01_AAPL+AMD+BABA+BITU+C+CSCO+DAL+DIA+GLD+GOOG+IJR+MARA+MRVL+MU+NEE+NKE+NVDA+ON+PLTR+PYPL+QLD+QQQ+QQQM+R.pkl"
     output_path = os.path.join(output_dir, file_name)
     os.makedirs(output_dir, exist_ok=True)
     gdown.download(url, output_path, quiet=False)
@@ -71,7 +73,7 @@ class AlpacaMarketsRetriever:
             return _NumpyCoreRedirectingUnpickler(input_file).load()
 
     def get_all_symbols(self) -> list[str]:
-        trading_client = TradingClient(self.api_key, self.api_key)
+        trading_client = TradingClient(self.api_key, self.api_secret)
         search_params = GetAssetsRequest(asset_class=AssetClass.US_EQUITY)
 
         assets = trading_client.get_all_assets(search_params)
@@ -124,6 +126,68 @@ class AlpacaMarketsRetriever:
                 return self.load_data(save_dir, file_name)
             
         return self._bars(symbol_or_symbols, start, end, save_dir)
+
+    def _quote_estimation(self, symbol: str, start: datetime, end: datetime) -> dict[str: float]:
+        start = pd.to_datetime(start)
+        start = datetime.combine(start.date(), Constants.Data.REGULAR_TRADING_HOURS_START) + timedelta(hours=2)
+
+        rng = pd.date_range(start=start,
+                            end=end,
+                            freq="30d",
+                            tz="UTC",          # optional – adds timezone info
+                            inclusive="left")
+
+        quotes = []
+        for date in rng:
+            start_date = pd.to_datetime(date)
+            end_date = start_date + timedelta(hours=1)
+            retrieval_result = self.quotes(symbol, start_date, end_date, limit=1)
+            if symbol in retrieval_result:
+                quotes.append(retrieval_result[symbol][0])
+
+        avg_spread = np.mean([(quote.ask_price - quote.bid_price) for quote in quotes])
+        ask_price = np.mean([quote.ask_price for quote in quotes])
+
+        return {
+            'ask_price': ask_price,
+            'ask_size': int(np.mean([quote.ask_size for quote in quotes])),
+            'bid_price': ask_price - avg_spread,
+            'bid_size': int(np.mean([quote.bid_size for quote in quotes])),
+        }
+
+    def _bars_with_quotes(self,
+             symbol_or_symbols: str | list[str],
+             start: datetime=datetime(2025, 5, 1),
+             end: datetime=datetime(2025, 5, 2), 
+             save_dir: str=Constants.Data.Retrieving.Alpaca.BARS_WITH_QUOTES_SAVE_DIR) -> dict[str: pd.DataFrame]:
+        bars = self.bars(symbol_or_symbols, start, end, save_dir=Constants.Data.Retrieving.Alpaca.BARS_SAVE_DIR)
+        quotes = {symbol: self._quote_estimation(symbol, start, end) for symbol in symbol_or_symbols}
+
+        for symbol, bar_df in bars.items():
+            for column_name, value in quotes[symbol].items():
+                bar_df[column_name] = value
+        
+        if save_dir:
+            file_name = self.build_file_name(symbol_or_symbols, start, end)
+            self.save_data(bars, save_dir, file_name)
+
+        return bars
+
+
+    def bars_with_quotes(self,
+             symbol_or_symbols: str | list[str],
+             start: datetime=datetime(2025, 5, 1),
+             end: datetime=datetime(2025, 5, 2), 
+             save_dir: str=Constants.Data.Retrieving.Alpaca.BARS_WITH_QUOTES_SAVE_DIR) -> dict[str: pd.DataFrame]:
+        
+        if save_dir:
+            file_name = self.build_file_name(symbol_or_symbols, start, end)
+            potential_load_path = os.path.join(save_dir, file_name)
+
+            if os.path.exists(potential_load_path): 
+                return self.load_data(save_dir, file_name)
+            
+        return self._bars_with_quotes(symbol_or_symbols, start, end, save_dir)
         
     def todays_bars(self, symbol_or_symbols, limit=100):
         request_params = StockBarsRequest(
