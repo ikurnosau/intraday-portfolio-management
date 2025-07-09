@@ -103,15 +103,19 @@ def evaluate_torch_regressor_multiasset(model: torch.nn.Module,
                                         X_test: Union[np.ndarray, torch.Tensor],
                                         y_test: Union[np.ndarray, torch.Tensor],
                                         test_return: Union[np.ndarray, torch.Tensor],
-                                        trade_percent: float = 0.05) -> None:
+                                        trade_asset_count: int = 5) -> None:
     """Evaluate a trained *multi-asset* PyTorch regressor.
 
     The model must output a tensor of shape ``(batch, asset)`` (or with an extra
     singleton dimension at the end which will be squeezed).  *y_train* /
     *y_test* as well as *test_return* must have the same layout.
 
-    The metrics mirror :func:`evaluate_torch_regressor` but flatten the asset
-    dimension when computing RMSE and trading PnL.
+    For every time step (row in the batch dimension) the ``trade_asset_count``
+    assets whose predictions deviate the most (in absolute terms) from the
+    neutral 0.5 value are selected.  Metrics (RMSE) and the trading PnL are
+    then computed **only for these chosen assets**.  All selected assets are
+    traded: a *long* position if the prediction is above 0.5, otherwise a
+    *short* position.  No additional thresholding is applied.
     """
 
     # ------------------------------------------------------------------
@@ -141,32 +145,59 @@ def evaluate_torch_regressor_multiasset(model: torch.nn.Module,
     train_preds_arr = _predict_in_batches(X_train)
     test_preds_arr = _predict_in_batches(X_test)
 
-    # Flatten asset axis so metrics treat every asset-time pair independently
-    train_preds = train_preds_arr.reshape(-1)
-    test_preds = test_preds_arr.reshape(-1)
+    # ------------------------------------------------------------------
+    # Select the *trade_asset_count* most confident assets per time step
+    # ------------------------------------------------------------------
+    def _topk_indices(a: np.ndarray, k: int) -> np.ndarray:
+        """Return indices of the *k* largest values per row (last axis)."""
+        # argsort ascending -> take last k columns
+        return np.argsort(a, axis=1)[:, -k:]
+
+    abs_dev_train = np.abs(train_preds_arr - 0.5)
+    abs_dev_test = np.abs(test_preds_arr - 0.5)
+
+    train_topk_idx = _topk_indices(abs_dev_train, trade_asset_count)  # (batch, k)
+    test_topk_idx = _topk_indices(abs_dev_test, trade_asset_count)
+
+    # Gather predictions for selected assets
+    rows = np.arange(train_preds_arr.shape[0])[:, None]
+    train_preds_sel = train_preds_arr[rows, train_topk_idx]  # (batch, k)
+    test_preds_sel = test_preds_arr[np.arange(test_preds_arr.shape[0])[:, None], test_topk_idx]
+
+    # Flatten so each (time, asset) pair becomes one sample for metrics
+    train_preds = train_preds_sel.reshape(-1)
+    test_preds = test_preds_sel.reshape(-1)
 
     def _to_np(arr):
         if isinstance(arr, torch.Tensor):
             return arr.cpu().numpy()
         return np.asarray(arr)
 
-    y_train_np = _to_np(y_train).reshape(-1)
-    y_test_np = _to_np(y_test).reshape(-1)
-    test_return_np = _to_np(test_return).reshape(-1)
+    y_train_np_full = _to_np(y_train)
+    y_test_np_full = _to_np(y_test)
+    test_return_np_full = _to_np(test_return)
 
-    # Thresholds on *flattened* predictions -----------------------------------
-    long_thresh = pd.Series(test_preds).quantile(1 - trade_percent)
-    short_thresh = pd.Series(test_preds).quantile(trade_percent)
+    y_train_sel = y_train_np_full[rows, train_topk_idx]
+    y_test_sel = y_test_np_full[np.arange(y_test_np_full.shape[0])[:, None], test_topk_idx]
+    test_return_sel = test_return_np_full[np.arange(test_return_np_full.shape[0])[:, None], test_topk_idx]
 
-    actions = pd.Series(test_preds).apply(
-        lambda p: 1 if p > long_thresh else (-1 if p < short_thresh else 0)
-    ).to_numpy()
+    y_train_np = y_train_sel.reshape(-1)
+    y_test_np = y_test_sel.reshape(-1)
+    test_return_np = test_return_sel.reshape(-1)
 
+    # ------------------------------------------------------------------
+    # Trading strategy: trade every selected asset (direction by sign)
+    # ------------------------------------------------------------------
+    actions = np.where(test_preds > 0.5, 1, -1)
+
+    # ------------------------------------------------------------------
+    # Metrics
+    # ------------------------------------------------------------------
     train_rmse = root_mean_squared_error(y_train_np, train_preds)
     test_rmse = root_mean_squared_error(y_test_np, test_preds)
     baseline_rmse = root_mean_squared_error(y_test_np, np.full_like(y_test_np, y_test_np.mean()))
 
-    expected_return = np.mean(test_return_np * actions) / (2 * trade_percent)
+    expected_return = np.mean(test_return_np * actions)
 
     print(
         f"Train rmse: {train_rmse}, Test rmse: {test_rmse}, Baseline rmse: {baseline_rmse}\n"

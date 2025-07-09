@@ -94,3 +94,57 @@ class SmartMinMaxNormalizer:
     # Back-compat: calling the instance directly behaves like old code
     def __call__(self, data: pd.DataFrame) -> pd.DataFrame:
         return self.fit_transform(data)
+
+
+class MinMaxNormalizerOverWindow:
+    """Rolling-window Min-Max scaler.
+
+    For each timestamp *t* the value ``x_t`` is rescaled using the *minimum* and
+    *maximum* of the preceding ``window`` samples (inclusive)::
+
+        \hat{x}_t = (x_t - min_{t-w+1:t} x) / (max_{t-w+1:t} x - min_{t-w+1:t} x + eps)
+
+    The result lies in the range \[0, 1\] (unless the window has zero
+    variance, in which case the denominator defaults to ``eps``).  The first
+    ``window-1`` rows will contain NaNs because the window is not yet filled —
+    this is consistent with the behaviour of :class:`ZScoreOverWindowNormalizer`.
+
+    Parameters
+    ----------
+    window : int, default 60
+        Size of the trailing window (in *rows*) used to compute the running
+        min/max statistics.
+    fit_feature : str | None, default None
+        If provided, the rolling min/max are **computed only on this feature**
+        (column).  The resulting statistics are then *broadcast* to all other
+        columns when scaling.  This mirrors the API of :class:`MinMaxNormalizer`.
+    eps : float, default 1e-12
+        Numerical stability constant added to the denominator.
+    """
+
+    def __init__(self, window: int = 60, fit_feature: str | None = None, eps: float = 1e-12):
+        if window < 1:
+            raise ValueError("window must be >= 1")
+        self.window = window
+        self.fit_feature = fit_feature
+        self.eps = eps
+
+    def __call__(self, data: pd.DataFrame) -> pd.DataFrame:
+        if not isinstance(data, pd.DataFrame):
+            raise TypeError("data must be a pandas DataFrame")
+
+        if self.fit_feature:
+            if self.fit_feature not in data.columns:
+                raise KeyError(f"fit_feature '{self.fit_feature}' not found in data columns")
+            roll_min = data[self.fit_feature].rolling(self.window).min()
+            roll_max = data[self.fit_feature].rolling(self.window).max()
+            denom = (roll_max - roll_min).abs() + self.eps
+            # Align index for broadcasting
+            scaled = (data.subtract(roll_min, axis=0)).divide(denom, axis=0)
+        else:
+            roll_min = data.rolling(self.window).min()
+            roll_max = data.rolling(self.window).max()
+            denom = (roll_max - roll_min).abs() + self.eps
+            scaled = (data - roll_min) / denom
+
+        return scaled.astype(float)
