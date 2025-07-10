@@ -31,6 +31,21 @@ class Trainer:
         self.device = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
         self.model.to(self.device)
 
+        # ------------------------------------------------------------------
+        # Multi-GPU support: automatically wrap in DataParallel when >1 GPU
+        # ------------------------------------------------------------------
+        if torch.cuda.device_count() > 1 and self.device.type == "cuda":
+            logging.info(f"DataParallel enabled – using {torch.cuda.device_count()} GPUs.")
+            self.model = torch.nn.DataParallel(self.model)
+            # Ensure optimizer references the (possibly) wrapped parameters
+            # Users typically construct the optimizer *before* Trainer, so its
+            # parameter groups already reference the original module.  This is
+            # still OK because DataParallel just replicates that module on each
+            # forward pass – parameters stay shared.  However, if an optimizer
+            # *without* parameters was passed, we re-associate it here.
+            if len(self.optimizer.param_groups) == 0:  # pragma: no cover
+                self.optimizer.add_param_group({"params": self.model.parameters()})
+
         # Handle scheduler configuration
         if isinstance(scheduler, dict) and scheduler['type'] == 'OneCycleLR':
             # If OneCycleLR config is passed, create it with correct steps_per_epoch
@@ -88,7 +103,15 @@ class Trainer:
             if self.save_path and val_loss < best_loss:
                 best_loss = val_loss
 
-                torch.save(self.model.state_dict(), self.save_path)
+                # If DataParallel was used, the underlying model weights live
+                # in the `.module` attribute.  Save a clean state_dict so the
+                # checkpoint can be loaded without DataParallel as well.
+                state_dict = (
+                    self.model.module.state_dict()
+                    if isinstance(self.model, torch.nn.DataParallel)
+                    else self.model.state_dict()
+                )
+                torch.save(state_dict, self.save_path)
                 logging.info(f"Best model saved to {self.save_path} with loss value: {best_loss:.4f}\n")
 
         return self.model, history

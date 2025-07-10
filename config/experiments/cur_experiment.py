@@ -69,13 +69,13 @@ model_config = ModelConfig(
     model=TemporalSpatial(
         input_dim=len(data_config.features),
         output_dim=1,  # regression
-        hidden_dim=64,
-        lstm_layers=2,
+        hidden_dim=128,
+        lstm_layers=3,
         bidirectional=True,
         dropout=0.2,
         use_spatial_attention=True,
         num_assets=len(data_config.symbol_or_symbols),
-        asset_embed_dim=16,
+        asset_embed_dim=32,
     ),
     registered_model_name="TemporalSpatial Regressor",
 )
