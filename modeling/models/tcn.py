@@ -41,6 +41,9 @@ class ResidualConvBlock(nn.Module):
             out = out.transpose(1, 2)
 
         out = self.dropout(out)
+        # Ensure temporal dimension matches residual for the addition
+        if out.shape[-1] != residual.shape[-1]:
+            out = out[:, :, :residual.shape[-1]]
         
         return self.activation(out + residual)
 
@@ -69,6 +72,9 @@ class TCN(nn.Module):
                 dropout))
 
         self.tcn = nn.Sequential(*layers)
+        # Learnable attention weight generator over the temporal dimension
+        # Projects hidden channels → scalar score for each time step
+        self.attention = nn.Conv1d(hidden_channels, 1, kernel_size=1)
         self.fc = nn.Linear(hidden_channels, output_dim)
         self.dropout = nn.Dropout(dropout)
 
@@ -85,8 +91,13 @@ class TCN(nn.Module):
         B, A, T, C = x.shape
         x = x.reshape(B * A, T, C)
         x = x.transpose(1, 2)  # Pytorch conv1d expects channels first: (B, C, T)
-        x = self.tcn(x)
-        x = x[:, :, -1]  # last time step
+        x = self.tcn(x)  # (B*A, hidden_channels, T_out)
+
+        # Compute attention weights across the temporal dimension
+        # ALternatieve to x[:, :, -1]
+        attn_scores = self.attention(x)              # (B*A, 1, T_out)
+        attn_weights = torch.softmax(attn_scores, 2) # softmax over T_out
+        x = (x * attn_weights).sum(dim=2)            # (B*A, hidden_channels)
 
         if self.norm:
             x = self.norm(x)

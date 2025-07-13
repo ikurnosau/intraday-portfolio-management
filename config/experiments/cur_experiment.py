@@ -81,9 +81,9 @@ model_config = ModelConfig(
     # ),
     model=TCN(
         in_channels=len(data_config.features),
-        hidden_channels=128,
+        hidden_channels=256,
         kernel_size=2,
-        num_layers=4,
+        num_layers=6,
         output_dim=1,
         use_layer_norm=True,
         dropout=0.2,
