@@ -13,7 +13,8 @@ class TemporalSpatial(nn.Module):
                  dropout: float = 0.1,
                  use_spatial_attention: bool = True,
                  num_assets: int | None = None,
-                 asset_embed_dim: int | None = None):
+                 asset_embed_dim: int | None = None,
+                 pre_embedding_dim: int | None = None):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.output_dim = output_dim
@@ -37,9 +38,19 @@ class TemporalSpatial(nn.Module):
             else:
                 self.asset_proj = None
 
+        # --------------------------------------------------------------------------------------------------
+        # 0.a (Optional) pre-LSTM asset embedding -----------------------------------------------------------
+        # A separate asset ID embedding concatenated to the raw features at each time step, allowing the
+        # temporal encoder to condition its dynamics on asset identity.
+        # --------------------------------------------------------------------------------------------------
+        self.use_pre_asset_embedding = num_assets is not None and (pre_embedding_dim or 0) > 0
+        if self.use_pre_asset_embedding:
+            self.pre_asset_embed = nn.Embedding(num_assets, pre_embedding_dim)
+
         # 1. Temporal encoder (shared across assets)
+        lstm_input_dim = input_dim + (pre_embedding_dim or 0 if self.use_pre_asset_embedding else 0)
         self.lstm = nn.LSTM(
-            input_size=input_dim,
+            input_size=lstm_input_dim,
             hidden_size=hidden_dim,
             num_layers=lstm_layers,
             batch_first=True,
@@ -71,10 +82,19 @@ class TemporalSpatial(nn.Module):
         Returns:
             logits: Tensor of shape (batch, asset, output_dim)
         """
+
         B, A, T, F = x.shape
 
-        # (B*A, T, F) → LSTM → (B*A, H)
-        x_flat = x.reshape(B * A, T, F)
+        # Add pre-LSTM asset embedding if enabled -----------------------------------------------------------
+        if self.use_pre_asset_embedding:
+            asset_ids = torch.arange(A, device=x.device)
+            pre_emb = self.pre_asset_embed(asset_ids)  # (A, E_pre)
+            pre_emb = pre_emb.unsqueeze(0).unsqueeze(2)  # (1, A, 1, E_pre)
+            pre_emb = pre_emb.expand(B, -1, T, -1)      # (B, A, T, E_pre)
+            x = torch.cat([x, pre_emb], dim=-1)          # (B, A, T, F + E_pre)
+
+        # (B*A, T, F_concat) → LSTM → (B*A, H)
+        x_flat = x.reshape(B * A, T, x.shape[-1])
         out, _ = self.lstm(x_flat)
         h = out[:, -1, :]  # last time step (B*A, H)
         h = self.norm(h)
