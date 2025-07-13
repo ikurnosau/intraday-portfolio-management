@@ -15,6 +15,7 @@ from data.processed.missing_values_handling import ForwardFillFlatBars, DummyMis
 from modeling.models.tsa_classifier import TemporalSpatial
 from modeling.models.lstm import LSTMClassifier
 from modeling.models.mlp import MLP
+from modeling.models.tcn import TCN
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
 data_config = DataConfig(
@@ -66,17 +67,26 @@ data_config = DataConfig(
 
 
 model_config = ModelConfig(
-    model=TemporalSpatial(
-        input_dim=len(data_config.features),
-        output_dim=1,  # regression
-        hidden_dim=256,
-        lstm_layers=4,
-        bidirectional=True,
+    # model=TemporalSpatial(
+    #     input_dim=len(data_config.features),
+    #     output_dim=1,  # regression
+    #     hidden_dim=256,
+    #     lstm_layers=4,
+    #     bidirectional=True,
+    #     dropout=0.2,
+    #     num_heads=4,
+    #     use_spatial_attention=True,
+    #     num_assets=len(data_config.symbol_or_symbols),
+    #     asset_embed_dim=32,
+    # ),
+    model=TCN(
+        in_channels=len(data_config.features),
+        hidden_channels=128,
+        kernel_size=2,
+        num_layers=4,
+        output_dim=1,
+        use_layer_norm=True,
         dropout=0.2,
-        num_heads=4,
-        use_spatial_attention=True,
-        num_assets=len(data_config.symbol_or_symbols),
-        asset_embed_dim=32,
     ),
     registered_model_name="TemporalSpatial Regressor",
 )
