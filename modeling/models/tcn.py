@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class ResidualConvBlock(nn.Module):
@@ -12,12 +13,16 @@ class ResidualConvBlock(nn.Module):
                  dropout: float = 0.2):
         super().__init__()
 
+        # Causal convolution: we pad *only on the left* so the output length
+        # stays equal to the input length (no look-ahead leakage and faster).
+        self.left_pad = (kernel_size - 1) * dilation
         self.conv1 = nn.Conv1d(
-            in_channels, 
-            out_channels, 
-            kernel_size, 
-            padding=(kernel_size - 1) * dilation, 
-            dilation=dilation)
+            in_channels,
+            out_channels,
+            kernel_size,
+            padding=0,          # manual padding for causality
+            dilation=dilation,
+        )
 
         if use_layer_norm:
             self.ln1 = nn.LayerNorm(out_channels)
@@ -34,16 +39,15 @@ class ResidualConvBlock(nn.Module):
         # (B, C, T) → (B, C, T)
 
         residual = self.downsample(x) if self.downsample else x
-        out = self.conv1(x)
+        # Apply left padding manually for causal behaviour
+        out = F.pad(x, (self.left_pad, 0))  # (left, right)
+        out = self.conv1(out)
         if self.ln1: 
             out = out.transpose(1, 2)
             out = self.ln1(out)
             out = out.transpose(1, 2)
 
         out = self.dropout(out)
-        # Ensure temporal dimension matches residual for the addition
-        if out.shape[-1] != residual.shape[-1]:
-            out = out[:, :, :residual.shape[-1]]
         
         return self.activation(out + residual)
 

@@ -5,6 +5,7 @@ from torch.optim.lr_scheduler import LRScheduler, OneCycleLR, ReduceLROnPlateau
 from tqdm import tqdm
 from typing import Callable, Union
 import logging
+import copy  # Local import to avoid polluting global namespace unnecessarily
 
 
 class Trainer: 
@@ -63,6 +64,7 @@ class Trainer:
     def train(self): 
         history = {"train_loss": [], "val_loss": []}
         best_loss = float('inf')
+        best_model_state = None  # Will store a deepcopy of the best weights
 
         if self.metrics:
             for name in self.metrics:
@@ -100,7 +102,7 @@ class Trainer:
             logging.info("")
 
             # Save model
-            if self.save_path and val_loss < best_loss:
+            if val_loss < best_loss:
                 best_loss = val_loss
 
                 # If DataParallel was used, the underlying model weights live
@@ -111,8 +113,24 @@ class Trainer:
                     if isinstance(self.model, torch.nn.DataParallel)
                     else self.model.state_dict()
                 )
-                torch.save(state_dict, self.save_path)
-                logging.info(f"Best model saved to {self.save_path} with loss value: {best_loss:.4f}\n")
+
+                # Keep a local copy of the best weights so we can return the best model
+                # after training finishes, without needing to reload from disk.
+                best_model_state = copy.deepcopy(state_dict)
+
+                # Persist to disk if a save_path was provided
+                if self.save_path:
+                    torch.save(state_dict, self.save_path)
+                    logging.info(
+                        f"Best model saved to {self.save_path} with loss value: {best_loss:.4f}\n"
+                    )
+
+        # After all epochs complete, ensure that the model holds the best-performing weights
+        if best_model_state is not None:
+            if isinstance(self.model, torch.nn.DataParallel):
+                self.model.module.load_state_dict(best_model_state)
+            else:
+                self.model.load_state_dict(best_model_state)
 
         return self.model, history
 

@@ -59,7 +59,7 @@ data_config = DataConfig(
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
     missing_values_handler=ForwardFillFlatBars(),
     train_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc), 
-    in_seq_len=60,
+    in_seq_len=120,
     multi_asset_prediction=True,
 
     cutoff_time=time(hour=14, minute=10),
@@ -67,27 +67,28 @@ data_config = DataConfig(
 
 
 model_config = ModelConfig(
-    # model=TemporalSpatial(
-    #     input_dim=len(data_config.features),
-    #     output_dim=1,  # regression
-    #     hidden_dim=256,
-    #     lstm_layers=4,
-    #     bidirectional=True,
-    #     dropout=0.2,
-    #     num_heads=4,
-    #     use_spatial_attention=True,
-    #     num_assets=len(data_config.symbol_or_symbols),
-    #     asset_embed_dim=32,
-    # ),
-    model=TCN(
-        in_channels=len(data_config.features),
-        hidden_channels=256,
-        kernel_size=2,
-        num_layers=6,
-        output_dim=1,
-        use_layer_norm=True,
+    model=TemporalSpatial(
+        input_dim=len(data_config.features),
+        output_dim=1,  # regression
+        hidden_dim=256,
+        lstm_layers=4,
+        bidirectional=True,
         dropout=0.2,
+        num_heads=4,
+        use_spatial_attention=True,
+        num_assets=len(data_config.symbol_or_symbols),
+        asset_embed_dim=32,
+        pre_embedding_dim=16,
     ),
+    # model=TCN(
+    #     in_channels=len(data_config.features),
+    #     hidden_channels=128,
+    #     kernel_size=2,
+    #     num_layers=6,
+    #     output_dim=1,
+    #     use_layer_norm=True,
+    #     dropout=0.2,
+    # ),
     registered_model_name="TemporalSpatial Regressor",
 )
 
