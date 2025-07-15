@@ -78,7 +78,7 @@ model_config = ModelConfig(
         use_spatial_attention=True,
         num_assets=len(data_config.symbol_or_symbols),
         asset_embed_dim=32,
-        pre_embedding_dim=16,
+        pre_embedding_dim=None,
     ),
     # model=TCN(
     #     in_channels=len(data_config.features),

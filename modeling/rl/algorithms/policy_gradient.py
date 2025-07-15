@@ -1,0 +1,57 @@
+from __future__ import annotations
+
+from typing import List
+
+import torch
+from torch.optim import Adam
+
+from ..agent import RlAgent
+
+
+class PolicyGradient:
+    """Vanilla REINFORCE implementation for discrete action spaces."""
+
+    def __init__(self, agent: RlAgent, lr: float = 1e-3, gamma: float = 0.99, device: torch.device | str = "cpu"):
+        self.agent = agent
+        self.gamma = gamma
+        self.device = torch.device(device)
+
+        # Only update *learnable* parameters of the actor (predictor params are frozen)
+        self.optimizer = Adam(
+            [p for p in self.agent.actor.parameters() if p.requires_grad], lr=lr
+        )
+
+    @staticmethod
+    def _discount_rewards(rewards: List[torch.Tensor], gamma: float) -> torch.Tensor:
+        """Compute discounted returns *in-place* to avoid additional memory."""
+        discounted = []
+        R = torch.tensor(0.0, dtype=torch.float32, device=rewards[0].device)
+        for r in reversed(rewards):
+            R = r + gamma * R
+            discounted.insert(0, R)
+        return torch.stack(discounted)
+
+    def train(self, epochs: int = 1):
+        trading_days = self.agent.get_trading_days()
+
+        for epoch in range(epochs):
+            epoch_loss = 0.0
+            for day in trading_days:
+                trajectory = self.agent.generate_trajectory(day)
+                if not trajectory:
+                    continue
+
+                log_probs = [step[2] for step in trajectory]
+                rewards = [step[3] for step in trajectory]
+
+                returns = self._discount_rewards(rewards, self.gamma)
+
+                loss = -(torch.stack(log_probs) * returns).sum()
+
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
+
+                epoch_loss += loss.item()
+
+            print(f"[PolicyGradient] Epoch {epoch + 1}/{epochs} — Loss: {epoch_loss:.4f}")
