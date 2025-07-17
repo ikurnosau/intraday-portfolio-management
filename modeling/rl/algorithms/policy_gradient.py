@@ -11,7 +11,7 @@ from ..agent import RlAgent
 class PolicyGradient:
     """Vanilla REINFORCE implementation for discrete action spaces."""
 
-    def __init__(self, agent: RlAgent, lr: float = 1e-3, gamma: float = 0.99, device: torch.device | str = "cpu"):
+    def __init__(self, agent: RlAgent, lr: float = 1e-3, gamma: float = 0.99, device: torch.device | str = "cuda"):
         self.agent = agent
         self.gamma = gamma
         self.device = torch.device(device)
@@ -41,12 +41,13 @@ class PolicyGradient:
                 if not trajectory:
                     continue
 
-                log_probs = [step[2] for step in trajectory]
-                rewards = [step[3] for step in trajectory]
+                # We treat actor as deterministic; use direct gradient through reward.
+                rewards = [step[2] for step in trajectory]  # list of scalar tensors
 
-                returns = self._discount_rewards(rewards, self.gamma)
+                rewards_t = torch.stack(rewards)  # (T,)
 
-                loss = -(torch.stack(log_probs) * returns).sum()
+                eps = 1e-6
+                loss = -torch.log(torch.clamp(1.0 + rewards_t, min=eps)).mean()
 
                 self.optimizer.zero_grad()
                 loss.backward()

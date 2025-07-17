@@ -10,16 +10,19 @@ from data.processed.dataset_creation import DatasetCreator
 from .state import State
 
 
-def _default_reward(prev_state: State, next_state: State) -> torch.Tensor:
-    """Simple reward: PnL minus transaction cost.
+def _default_reward(prev_state: State, next_state: State, fee: float) -> torch.Tensor:
+    """Return incremental portfolio *log*-return given a transaction fee.
 
-    * **PnL** is the *next* return applied to the position taken at the **end** of
-      the previous step (``next_state.position``).
-    * **Cost** is proportional to the change in position and the bid/ask spread.
+    r_t = Δw · rₜ₊₁ − |Δw| · fee
+    where Δw = wₜ - wₜ₋₁.
+
+    We output *r_t* (not its log) so the algorithm can combine it flexibly
+    (e.g. into ∑log(1+r_t) or the final cumulative product).
     """
-    pnl = next_state.position * next_state.next_step_return
-    cost = torch.abs(next_state.position - prev_state.position) * next_state.spread
-    return pnl - cost
+    delta_w = next_state.position - prev_state.position
+    pnl_component = delta_w * next_state.next_step_return  # (assets,)
+    cost_component = torch.abs(delta_w) * (fee + next_state.spread)  # (assets,)
+    return (pnl_component - cost_component).sum()  # scalar
 
 
 class PortfolioEnvironment:
@@ -29,12 +32,14 @@ class PortfolioEnvironment:
         self,
         retrieval_result: Dict[str, pd.DataFrame],
         dataset_creator: DatasetCreator,
-        reward_function: Callable[[State, State], torch.Tensor] | None = None,
-        device: torch.device | str = "cpu",
+        transaction_fee: float = 0.0005,
+        reward_function: Callable[[State, State, float], torch.Tensor] | None = None,
+        device: torch.device | str = "cuda",
     ):
         self.retrieval_result = retrieval_result
         self.dataset_creator = dataset_creator
         self.device = torch.device(device)
+        self.transaction_fee = transaction_fee
         self.reward_function = reward_function or _default_reward
 
         self.state_templates: Dict[dt.date, List[State]] = {}
@@ -101,9 +106,9 @@ class PortfolioEnvironment:
             return torch.tensor(0.0, device=self.device), None
 
         next_state = self.state_templates[self.trading_day][next_index].copy()
-        next_state.position = action.detach()
+        next_state.position = action
 
-        reward = self.reward_function(prev_state, next_state)
+        reward = self.reward_function(prev_state, next_state, self.transaction_fee)
 
         self.state_index = next_index
         self.current_state = next_state

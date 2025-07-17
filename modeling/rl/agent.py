@@ -10,7 +10,7 @@ from .actors.actor import RlActor
 class RlAgent:
     """Couples a policy network with the trading environment."""
 
-    def __init__(self, actor: RlActor, env: PortfolioEnvironment, device: torch.device | str = "cpu"):
+    def __init__(self, actor: RlActor, env: PortfolioEnvironment, device: torch.device | str = "cuda"):
         self.actor = actor
         self.env = env
         self.device = torch.device(device)
@@ -27,19 +27,16 @@ class RlAgent:
         if self.current_state is None:
             raise RuntimeError("Trading day not initialised; call set_trading_day first.")
 
-        # Sample action from current policy
-        dist = self.actor(self.current_state)
-        action = dist.sample()
-        log_prob = dist.log_prob(action)
+        action = self.actor(self.current_state)
 
         reward, next_state = self.env.step(action.to(self.device))
         if next_state is None:
             # Episode finished
             return None
 
-        prev_state = self.current_state.copy()
+        prev_state = self.current_state  # keep gradient flow through position
         self.current_state = next_state
-        return prev_state, action, log_prob, reward
+        return prev_state, action, reward
 
     def generate_trajectory(self, day):
         """Collect a full-day trajectory of (state, action, log_prob, reward) tuples."""
