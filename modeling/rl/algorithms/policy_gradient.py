@@ -4,6 +4,7 @@ from typing import List
 
 import torch
 from torch.optim import Adam
+import logging
 
 from ..agent import RlAgent
 
@@ -52,6 +53,8 @@ class PolicyGradient:
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
+
+                logging.info(f"loss: {loss.item()}, rewards_t: {rewards_t.mean().item()}")
 
                 epoch_loss += loss.item()
 

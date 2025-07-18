@@ -11,7 +11,7 @@ class RlAgent:
     """Couples a policy network with the trading environment."""
 
     def __init__(self, actor: RlActor, env: PortfolioEnvironment, device: torch.device | str = "cuda"):
-        self.actor = actor
+        self.actor = actor.to(device)
         self.env = env
         self.device = torch.device(device)
         self.current_state: State | None = None

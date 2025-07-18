@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
+import logging
 
 from ..state import State
 
@@ -27,6 +28,7 @@ class RlActor(nn.Module):
         signal_predictor: nn.Module,
         n_assets: int,
         hidden_dim: int = 128,
+        device: torch.device | str = "cuda",
     ):
         super().__init__()
         self.signal_predictor = signal_predictor
@@ -44,25 +46,29 @@ class RlActor(nn.Module):
             predictor_dim = next(iter(self.signal_predictor.parameters())).shape[0]
 
         self.fc_shared = nn.Sequential(
-            nn.Linear(predictor_dim + 2, hidden_dim),
+            nn.Linear(n_assets * 3, hidden_dim),
             nn.ReLU(),
         )
 
         # Single head producing raw allocations
         self.fc_out = nn.Linear(hidden_dim, n_assets)
 
+        self.device = torch.device(device)
+
     # ------------------------------------------------------------------ #
     # Forward – returns (action, log_prob)
     # ------------------------------------------------------------------ #
 
     def forward(self, state: State):
+        
+        
         # 1) Build feature vector
         x = state.signal_features.unsqueeze(0)  # (1, feat)
         with torch.no_grad():
             signal_repr = self.signal_predictor(x).squeeze(0)  # (feat',)
-
-        extra = torch.stack((state.position, state.spread))  # (2,)
-        h = self.fc_shared(torch.cat([signal_repr, extra], dim=-1))  # (hidden,)
+            
+        # extra = torch.stack((state.position, state.spread))  # (2,)
+        h = self.fc_shared(torch.cat([signal_repr, state.position, state.spread], dim=-1))  # (hidden,)
 
         # 2) Raw weights in (-1,1)
         v = torch.tanh(self.fc_out(h))  # (n_assets,)

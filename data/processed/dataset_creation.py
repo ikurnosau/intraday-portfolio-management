@@ -20,9 +20,10 @@ class DatasetCreator:
                  normalizer: Callable,
                  missing_values_handler: Callable,
                  in_seq_len: int,
-                 train_set_last_date: datetime,
+                 train_set_last_date: datetime | None,
                  multi_asset_prediction: bool,
-                 cutoff_time: datetime_lib.time | None = datetime_lib.time(hour=14, minute=10)):
+                 cutoff_time: datetime_lib.time | None = datetime_lib.time(hour=14, minute=10), 
+                 include_test_data: bool = True):
         self.features = features
         self.target = target
         self.normalizer = normalizer
@@ -31,6 +32,7 @@ class DatasetCreator:
         self.train_last_date = train_set_last_date
         self.multi_asset_prediction = multi_asset_prediction
         self.cutoff_time = cutoff_time
+        self.include_test_data = include_test_data
 
     def create_dataset_numpy(self, 
                              data: dict[str, pd.DataFrame],
@@ -78,65 +80,9 @@ class DatasetCreator:
 
         train_dict, test_dict = self._train_test_split(processed_assets)
 
-        per_asset_X_train = {
-            a: df.drop(["date", "target", "next_return", "spread"], axis=1).to_numpy(dtype=np.float32)
-            for a, df in train_dict.items()
-        }
-        per_asset_y_train = {
-            a: df["target"].to_numpy(dtype=np.float32) for a, df in train_dict.items()
-        }
-        per_asset_next_return_train = {
-            a: df["next_return"].to_numpy(dtype=np.float32) for a, df in train_dict.items()
-        }
-        per_asset_spread_train = {
-            a: df["spread"].to_numpy(dtype=np.float32) for a, df in train_dict.items()
-        }
-
-        per_asset_X_test = {
-            a: df.drop(["date", "target", "next_return", "spread"], axis=1).to_numpy(dtype=np.float32)
-            for a, df in test_dict.items()
-        }
-        per_asset_y_test = {
-            a: df["target"].to_numpy(dtype=np.float32) for a, df in test_dict.items()
-        }
-        per_asset_next_return_test = {
-            a: df["next_return"].to_numpy(dtype=np.float32) for a, df in test_dict.items()
-        }
-        per_asset_spread_test = {
-            a: df["spread"].to_numpy(dtype=np.float32) for a, df in test_dict.items()
-        }
-
-        X_train, y_train, next_return_train, spread_train = self._stack(
-            per_asset_X_train,
-            per_asset_y_train,
-            per_asset_next_return_train,
-            per_asset_spread_train,
-        )
-        X_test, y_test, next_return_test, spread_test = self._stack(
-            per_asset_X_test,
-            per_asset_y_test,
-            per_asset_next_return_test,
-            per_asset_spread_test,
-        )
-
-        # Convert to sequential format if required
-        if self.in_seq_len > 1:
-            (
-                X_train,
-                y_train,
-                next_return_train,
-                spread_train,
-            ) = self.transform_data_to_sequential(
-                X_train, y_train, next_return_train, spread_train
-            )
-            (
-                X_test,
-                y_test,
-                next_return_test,
-                spread_test,
-            ) = self.transform_data_to_sequential(
-                X_test, y_test, next_return_test, spread_test
-            )
+        X_train, y_train, next_return_train, spread_train = self._to_numpy_and_stack(train_dict)
+        X_test, y_test, next_return_test, spread_test = self._to_numpy_and_stack(test_dict) \
+            if self.include_test_data else (None, None, None, None)
 
         return (
             X_train,
@@ -214,6 +160,55 @@ class DatasetCreator:
             for asset, df in full_dict.items()
         }
         return train_dict, test_dict
+
+    def _to_numpy_and_stack(
+        self,
+        per_asset_df: dict[str, pd.DataFrame],
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Convert a per-asset DataFrame dictionary into stacked (X, y, next_ret, spread) numpy arrays.
+
+        This consolidates all logic that was previously duplicated for the train and test
+        splits inside ``create_dataset_numpy``:
+
+        1. Extract feature matrix, target, next-period return and spreads as *per-asset* numpy arrays.
+        2. Call :py:meth:`_stack` to combine them into either a multi-asset tensor or a flat batch,
+           depending on ``self.multi_asset_prediction``.
+        3. Optionally convert the flat representation into sliding windows when
+           ``self.in_seq_len`` > 1.
+        """
+
+        per_asset_X = {
+            a: df.drop(["date", "target", "next_return", "spread"], axis=1).to_numpy(dtype=np.float32)
+            for a, df in per_asset_df.items()
+        }
+        per_asset_y = {a: df["target"].to_numpy(dtype=np.float32) for a, df in per_asset_df.items()}
+        per_asset_next_return = {
+            a: df["next_return"].to_numpy(dtype=np.float32) for a, df in per_asset_df.items()
+        }
+        per_asset_spread = {
+            a: df["spread"].to_numpy(dtype=np.float32) for a, df in per_asset_df.items()
+        }
+
+        X, y, next_ret, spread = self._stack(
+            per_asset_X,
+            per_asset_y,
+            per_asset_next_return,
+            per_asset_spread,
+        )
+
+        # Convert to sequential format if required
+        if self.in_seq_len > 1:
+            X, y, next_ret, spread = self.transform_data_to_sequential(
+                X, y, next_ret, spread
+            )
+
+        if self.multi_asset_prediction:
+            X = np.swapaxes(X, 0, 1)
+            y = np.swapaxes(y, 0, 1)
+            next_ret = np.swapaxes(next_ret, 0, 1)
+            spread = np.swapaxes(spread, 0, 1)
+
+        return X, y, next_ret, spread
 
     def _stack(
         self,
