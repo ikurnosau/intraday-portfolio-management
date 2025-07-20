@@ -25,7 +25,7 @@ from .state import State
 #     cost_component = torch.abs(delta_w) * (fee + current_state.spread)  # (assets,)
 #     return (pnl_component - cost_component).sum()  # scalar
 
-def _default_reward(current_state: State, next_state: State, fee: float) -> torch.Tensor:
+def _default_reward(current_state: State, next_state: State, fee: float, spread_discount: float = 1) -> torch.Tensor:
     """Return incremental portfolio *log*-return given a transaction fee.
 
     r_t = Δw · rₜ₊₁ − |Δw| · fee
@@ -35,7 +35,7 @@ def _default_reward(current_state: State, next_state: State, fee: float) -> torc
     (e.g. into ∑log(1+r_t) or the final cumulative product).
     """
     return_component = current_state.position * current_state.next_step_return  # (assets,)
-    cost_component = torch.abs(next_state.position - current_state.position) * (fee + current_state.spread)  # (assets,)
+    cost_component = torch.abs(next_state.position - current_state.position) * (fee + current_state.spread / 2 * spread_discount)  # (assets,)
     return (return_component - cost_component).sum()  # scalar
 
 
