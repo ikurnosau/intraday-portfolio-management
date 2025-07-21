@@ -39,41 +39,28 @@ class RlActor(nn.Module):
             p.requires_grad = False
         self.signal_predictor.eval()
 
-        # Determine predictor output dimension
-        if hasattr(signal_predictor, "n_class"):
-            predictor_dim = signal_predictor.n_class
-        else:
-            predictor_dim = next(iter(self.signal_predictor.parameters())).shape[0]
-
         self.fc_shared = nn.Sequential(
             nn.Linear(n_assets * 3, hidden_dim),
             nn.ReLU(),
         )
-
-        # Single head producing raw allocations
         self.fc_out = nn.Linear(hidden_dim, n_assets)
 
         self.device = torch.device(device)
 
-    # ------------------------------------------------------------------ #
-    # Forward – returns (action, log_prob)
-    # ------------------------------------------------------------------ #
-
     def forward(self, state: State):
-        
-        
-        # 1) Build feature vector
-        x = state.signal_features.unsqueeze(0)  # (1, feat)
+        state.signal_features = state.signal_features.to(self.device, non_blocking=True)
+        state.position = state.position.to(self.device, non_blocking=True)
+        state.spread = state.spread.to(self.device, non_blocking=True)
+
         with torch.no_grad():
-            signal_repr = self.signal_predictor(x).squeeze(0)  # (feat',)
-            
-        # extra = torch.stack((state.position, state.spread))  # (2,)
-        h = self.fc_shared(torch.cat([signal_repr, state.position, state.spread], dim=-1))  # (hidden,)
+            signal_repr = self.signal_predictor(state.signal_features)  # (B, n_assets)
 
-        # 2) Raw weights in (-1,1)
-        v = torch.tanh(self.fc_out(h))  # (n_assets,)
+        h = self.fc_shared(
+            torch.cat([signal_repr, state.position, state.spread], dim=-1)
+        )  # (B, hidden_dim)
 
-        # 3) ℓ¹-normalise so Σ|a| = 1
-        action = v / (v.abs().sum() + 1e-8)
+        v = torch.tanh(self.fc_out(h))  # (B, n_assets)
+
+        action = v / (v.abs().sum(dim=-1, keepdim=True) + 1e-8)  # (B, n_assets)
 
         return action
