@@ -138,3 +138,7 @@ config = ExperimentConfig(
     train_config=train_config,
     observability_config=observability_config
 )
+
+# Adam(
+#             [p for p in self.agent.actor.parameters() if p.requires_grad], lr=lr
+#         )

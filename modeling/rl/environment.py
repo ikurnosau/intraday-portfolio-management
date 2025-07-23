@@ -18,11 +18,11 @@ class PortfolioEnvironment:
 
     def __init__(
         self,
+        reward_function: Callable[[State, State, float], torch.Tensor],
         transaction_fee: float = 0.0005,
-        reward_function: Callable[[State, State, float], torch.Tensor] | None = None,
     ):
+        self.reward_function = reward_function
         self.transaction_fee = transaction_fee
-        self.reward_function = reward_function or estimated_return_reward
 
         self.signal_features_trajectory_batch = None
         self.next_returns_trajectory_batch = None
@@ -44,7 +44,7 @@ class PortfolioEnvironment:
         spreads_trajectory_batch: torch.Tensor,
     ) -> State:
         """
-        signal_features_trajectory_batch: (batch_size, trajectory_length, n_assets, seq_len,n_features)
+        signal_features_trajectory_batch: (batch_size, trajectory_length, n_assets, seq_len, n_features)
         next_returns_trajectory_batch: (batch_size, trajectory_length, n_assets)
         spreads_trajectory_batch: (batch_size, trajectory_length, n_assets)
         """

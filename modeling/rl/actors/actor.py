@@ -29,15 +29,18 @@ class RlActor(nn.Module):
         n_assets: int,
         hidden_dim: int = 128,
         device: torch.device | str = "cuda",
+        train_signal_predictor: bool = False,
     ):
         super().__init__()
         self.signal_predictor = signal_predictor
         self.n_assets = n_assets
 
         # Freeze predictor parameters (assumed pre-trained)
-        for p in self.signal_predictor.parameters():
-            p.requires_grad = False
-        self.signal_predictor.eval()
+        self.train_signal_predictor = train_signal_predictor
+        if not self.train_signal_predictor:
+            for p in self.signal_predictor.parameters():
+                p.requires_grad = False
+            self.signal_predictor.eval()
 
         self.fc_shared = nn.Sequential(
             nn.Linear(n_assets * 3, hidden_dim),
@@ -52,7 +55,10 @@ class RlActor(nn.Module):
         state.position = state.position.to(self.device, non_blocking=True)
         state.spread = state.spread.to(self.device, non_blocking=True)
 
-        with torch.no_grad():
+        if not self.train_signal_predictor:
+            with torch.no_grad():
+                signal_repr = self.signal_predictor(state.signal_features)  # (B, n_assets)
+        else:
             signal_repr = self.signal_predictor(state.signal_features)  # (B, n_assets)
 
         h = self.fc_shared(
