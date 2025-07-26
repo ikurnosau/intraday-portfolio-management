@@ -1,12 +1,13 @@
 from __future__ import annotations
 from typing import List, Dict
+import logging
 
 import torch
-import logging
 from tqdm import tqdm
 
 from ..agent import RlAgent
 from ..metrics import MetricsCalculator
+from ..actors.base_actor import BaseActor
 
 
 class PolicyGradient:
@@ -56,10 +57,14 @@ class PolicyGradient:
                 desc=("Train" if training else "Val") + f" Epoch {epoch + 1}/{epochs}",
                 leave=False,
             ):
+                signal_features_trajectory_batch = signal_features_trajectory_batch.to(self.device, non_blocking=True)
+                next_returns_trajectory_batch = next_returns_trajectory_batch.to(self.device, non_blocking=True)
+                spreads_trajectory_batch = spreads_trajectory_batch.to(self.device, non_blocking=True)
+
                 trajectory = self.agent.generate_trajectory(
-                    signal_features_trajectory_batch=signal_features_trajectory_batch.to(self.device, non_blocking=True),
-                    next_returns_trajectory_batch=next_returns_trajectory_batch.to(self.device, non_blocking=True),
-                    spreads_trajectory_batch=spreads_trajectory_batch.to(self.device, non_blocking=True),
+                    signal_features_trajectory_batch=signal_features_trajectory_batch,
+                    next_returns_trajectory_batch=next_returns_trajectory_batch,
+                    spreads_trajectory_batch=spreads_trajectory_batch,
                 )
 
                 if not trajectory:
@@ -97,10 +102,10 @@ class PolicyGradient:
 
         for epoch in range(self.num_epochs):
             # --- Training phase ---
-            self.train_epoch(epoch)
+            epoch_loss, realized_returns = self.train_epoch(epoch)
 
             # --- Validation phase ---
-            self.eval_epoch(epoch)
+            epoch_loss, realized_returns = self.eval_epoch(epoch)
 
             # Step the LR scheduler *once per epoch* (if any)
             if self.scheduler is not None:
@@ -108,7 +113,12 @@ class PolicyGradient:
 
         return self.train_history, self.val_history
 
-    def eval_epoch(self, epoch: int):
+    def evaluate(self, actor: BaseActor) -> tuple[float, List[float]]:
+        self.agent.actor = actor.to(self.device)
+        epoch_loss, realized_returns = self.eval_epoch(-1)
+        return epoch_loss, realized_returns
+
+    def eval_epoch(self, epoch: int) -> tuple[float, List[float]]:
         if self.val_loader is None:
             logging.warning("[PolicyGradient] eval_epoch called but no val_loader was provided.")
             return {}
@@ -130,11 +140,10 @@ class PolicyGradient:
             self.val_history.append(epoch_metrics)
             metrics_str = ", ".join(f"{k}: {v:.4f}" for k, v in epoch_metrics.items())
             logging.info(f"[PolicyGradient] [VAL] Epoch {epoch + 1}/{self.num_epochs} — {metrics_str}")
-            return epoch_metrics
 
-        return {}
+        return epoch_loss, realized_returns
 
-    def train_epoch(self, epoch: int):
+    def train_epoch(self, epoch: int) -> tuple[float, List[float]]:
         # Training mode
         self.agent.actor.train()
 
@@ -152,3 +161,5 @@ class PolicyGradient:
             self.train_history.append(epoch_metrics)
             metrics_str = ", ".join(f"{k}: {v:.4f}" for k, v in epoch_metrics.items())
             logging.info(f"[PolicyGradient] Epoch {epoch + 1}/{self.num_epochs} — {metrics_str}")
+
+        return epoch_loss, realized_returns

@@ -27,11 +27,11 @@ def cumulative_return(returns: Sequence[float | int]) -> float:
         return float("nan")
     return float(np.prod(1.0 + r) - 1.0)
 
-def mean_return(returns: Sequence[float | int]) -> float:
+def mean_return_percentage(returns: Sequence[float | int]) -> float:
     r = _to_numpy(returns)
     if r.size == 0:
         return float("nan")
-    return float(r.mean())
+    return float(r.mean() * 1e2)
 
 
 def APR(returns: Sequence[float | int]) -> float:
@@ -98,7 +98,7 @@ def DDR(returns: Sequence[float | int]) -> float:
 # Default metric set expected by the user
 DEFAULT_METRICS: Dict[str, Callable[[Sequence[float]], float]] = {
     "CumulativeReturn": cumulative_return,
-    "MeanReturn": mean_return,
+    "MeanReturnPercentage": mean_return_percentage,
 }
 
 

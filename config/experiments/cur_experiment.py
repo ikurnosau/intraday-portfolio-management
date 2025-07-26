@@ -20,8 +20,8 @@ from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
 data_config = DataConfig(
     symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
-    start=datetime(2024, 6, 1),
-    end=datetime(2025, 6, 1),
+    start=datetime(2024, 6, 1, tzinfo=timezone.utc),
+    end=datetime(2025, 6, 1, tzinfo=timezone.utc),
 
     features={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------

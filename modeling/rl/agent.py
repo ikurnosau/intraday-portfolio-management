@@ -1,37 +1,39 @@
 from __future__ import annotations
+from tkinter.constants import NONE
 
 import torch
 import logging
 
 from .environment import PortfolioEnvironment
 from .state import State
+from .actors.base_actor import BaseActor
 from .actors.actor import RlActor
 from time import perf_counter
 from contextlib import contextmanager
 
 
-@contextmanager
-def timer(label="Block"):
-    start = perf_counter()
-    yield
-    end = perf_counter()
-    logging.info(f"{label} took {end - start:.4f} seconds")
-
-
 class RlAgent:
     """Couples a policy network with the trading environment."""
 
-    def __init__(self, actor: RlActor, env: PortfolioEnvironment, device: torch.device | str = "cuda"):
-        self.actor = actor.to(device)
+    def __init__(self, actor: BaseActor, env: PortfolioEnvironment, single_action_per_trajectory: bool = False):
+        self.actor = actor
         self.env = env
+
+        self.single_action_per_trajectory = single_action_per_trajectory
+        self.last_action = None
 
         self.current_state: State | None = None
 
     def step(self) -> tuple[State, torch.Tensor, torch.Tensor] | None:
-        # with timer("Actor forward"):
-        action = self.actor(self.current_state)
+        if self.single_action_per_trajectory: 
+            if self.last_action is None:
+                action = self.actor(self.current_state)
+                self.last_action = action
+            else:
+                action = self.last_action
+        else: 
+            action = self.actor(self.current_state)
 
-        # with timer("Environment step"):
         reward, next_state = self.env.step(action)
 
         if next_state is None:
@@ -52,6 +54,9 @@ class RlAgent:
             next_returns_trajectory_batch=next_returns_trajectory_batch,
             spreads_trajectory_batch=spreads_trajectory_batch,
         )
+
+        if self.single_action_per_trajectory:
+            self.last_action = None
 
         trajectory = []
         while True:

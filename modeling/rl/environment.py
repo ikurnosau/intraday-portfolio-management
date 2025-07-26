@@ -10,7 +10,6 @@ import numpy as np
 
 from data.processed.dataset_creation import DatasetCreator
 from .state import State
-from .reward import estimated_return_reward
 
 
 class PortfolioEnvironment:
@@ -18,11 +17,9 @@ class PortfolioEnvironment:
 
     def __init__(
         self,
-        reward_function: Callable[[State, State, float], torch.Tensor],
-        transaction_fee: float = 0.0005,
+        reward_function: Callable[[State, State], torch.Tensor],
     ):
         self.reward_function = reward_function
-        self.transaction_fee = transaction_fee
 
         self.signal_features_trajectory_batch = None
         self.next_returns_trajectory_batch = None
@@ -35,7 +32,7 @@ class PortfolioEnvironment:
             signal_features=self.signal_features_trajectory_batch[:, i, :, :, :],
             next_step_return=self.next_returns_trajectory_batch[:, i, :],
             spread=self.spreads_trajectory_batch[:, i, :],
-            position=torch.zeros(self.spreads_trajectory_batch[:, i, :].shape),
+            position=torch.zeros(self.spreads_trajectory_batch[:, i, :].shape).to(self.spreads_trajectory_batch.device),
         )
 
     def reset(self,
@@ -66,7 +63,7 @@ class PortfolioEnvironment:
         next_state = self._prepare_state_template(next_index)
         next_state.position = action
 
-        reward = self.reward_function(self.current_state, next_state, self.transaction_fee)
+        reward = self.reward_function(self.current_state, next_state)
 
         self.state_index = next_index
         self.current_state = next_state

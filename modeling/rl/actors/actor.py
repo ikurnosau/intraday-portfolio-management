@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
-import logging
 
 from ..state import State
+from .base_actor import BaseActor
 
 
-class RlActor(nn.Module):
+class RlActor(nn.Module, BaseActor):
     """Policy network mapping :class:`State` → portfolio allocation.
 
     The allocation vector ``a`` (*) satisfies::
@@ -28,8 +28,10 @@ class RlActor(nn.Module):
         signal_predictor: nn.Module,
         n_assets: int,
         hidden_dim: int = 128,
-        device: torch.device | str = "cuda",
         train_signal_predictor: bool = False,
+        num_layers: int = 1,
+        dropout: float = 0.2,
+        use_layer_norm: bool = True,
     ):
         super().__init__()
         self.signal_predictor = signal_predictor
@@ -42,19 +44,32 @@ class RlActor(nn.Module):
                 p.requires_grad = False
             self.signal_predictor.eval()
 
-        self.fc_shared = nn.Sequential(
-            nn.Linear(n_assets * 3, hidden_dim),
-            nn.ReLU(),
-        )
+        # --- Build a deeper shared MLP backbone -------------------------------------------------
+        # The network depth, dropout probability and use of LayerNorm can be configured via
+        # constructor arguments. This makes the actor more flexible while preserving backward
+        # compatibility with previous checkpoints that relied on the single-layer layout.
+
+        layers: list[nn.Module] = []
+
+        in_features = n_assets * 3  # predictor output + position + spread
+        for i in range(num_layers):
+            layers.append(nn.Linear(in_features if i == 0 else hidden_dim, hidden_dim))
+
+            if use_layer_norm:
+                layers.append(nn.LayerNorm(hidden_dim))
+
+            layers.append(nn.ReLU())
+
+            if dropout > 0.0:
+                layers.append(nn.Dropout(dropout))
+
+        self.fc_shared = nn.Sequential(*layers)
+
+        # Final projection to the n_assets allocation vector
         self.fc_out = nn.Linear(hidden_dim, n_assets)
 
-        self.device = torch.device(device)
 
     def forward(self, state: State):
-        state.signal_features = state.signal_features.to(self.device, non_blocking=True)
-        state.position = state.position.to(self.device, non_blocking=True)
-        state.spread = state.spread.to(self.device, non_blocking=True)
-
         if not self.train_signal_predictor:
             with torch.no_grad():
                 signal_repr = self.signal_predictor(state.signal_features)  # (B, n_assets)
