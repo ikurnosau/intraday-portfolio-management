@@ -27,15 +27,25 @@ class _NumpyCoreRedirectingUnpickler(pickle.Unpickler):
         return super().find_class(module, name)
 
 
-def _download_from_gdrive():
-    file_id = "1oE69lvgomUzIqJHCOJ4N1g6opWuv1coW"
+def _download_file_from_gdrive(file_id: str, output_dir: str, file_name: str):
     url = f'https://drive.google.com/uc?id={file_id}'
-    output_dir = '../data/raw/alpaca/bars_with_quotes'
-    file_name = "1Min_2024-06-01-2025-06-01_AAPL+AMD+BABA+BITU+C+CSCO+DAL+DIA+GLD+GOOG+IJR+MARA+MRVL+MU+NEE+NKE+NVDA+ON+PLTR+PYPL+QLD+QQQ+QQQM+R.pkl"
     output_path = os.path.join(output_dir, file_name)
     os.makedirs(output_dir, exist_ok=True)
     gdown.download(url, output_path, quiet=False)
 
+
+def _download_from_gdrive():
+    _download_file_from_gdrive(
+        file_id= "1oE69lvgomUzIqJHCOJ4N1g6opWuv1coW",
+        output_dir='../data/raw/alpaca/bars_with_quotes',
+        file_name="1Min_2024-06-01-2025-06-01_AAPL+AMD+BABA+BITU+C+CSCO+DAL+DIA+GLD+GOOG+IJR+MARA+MRVL+MU+NEE+NKE+NVDA+ON+PLTR+PYPL+QLD+QQQ+QQQM+R.pkl"
+    )
+    _download_file_from_gdrive(
+        file_id= "1fBIwQMGOf-cV5IN-psvWqSV2I3MvPum_",
+        output_dir='../modeling/checkpoints',
+        file_name="best_model2.pth"
+    )
+    
 
 class AlpacaMarketsRetriever:
     FEED = 'sip'

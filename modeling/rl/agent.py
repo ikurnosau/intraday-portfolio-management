@@ -1,5 +1,4 @@
 from __future__ import annotations
-from tkinter.constants import NONE
 
 import torch
 import logging

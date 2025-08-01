@@ -7,3 +7,4 @@ alpaca-py
 python-dotenv
 blinker>=1.4 
 gdown
+matplotlib
