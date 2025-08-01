@@ -45,7 +45,8 @@ class PolicyGradient:
         training: bool = True,
     ) -> tuple[float, List[float]]:
         epoch_loss = 0.0
-        realized_returns: List[float] = []
+        epoch_realized_returns: List[float] = []
+        epoch_actions: List[torch.Tensor] = []
 
         with torch.enable_grad() if training else torch.no_grad():
             for (
@@ -71,11 +72,20 @@ class PolicyGradient:
                     continue
 
                 rewards = [step[2] for step in trajectory]  # list[(batch_size,)]
+                epoch_realized_returns.extend(
+                    torch.stack(rewards)\
+                        .t()\
+                        .reshape(-1)\
+                        .detach().cpu().tolist()
+                )
 
-                realized_batch = (
-                    torch.cat(rewards, dim=0).detach().cpu().tolist()
-                )  # flatten
-                realized_returns.extend(realized_batch)
+                actions = [step[1] for step in trajectory]  # list[(batch_size, n_assets)]
+                epoch_actions.extend(
+                    torch.stack(actions)\
+                        .transpose(0, 1)\
+                        .reshape(-1, actions[0].shape[1])\
+                        .detach().cpu().tolist()
+                )
 
                 loss = self.loss_fn(rewards)
 
@@ -86,7 +96,7 @@ class PolicyGradient:
 
                 epoch_loss += loss.item()
 
-        return epoch_loss, realized_returns
+        return epoch_loss, epoch_realized_returns, epoch_actions
 
     def train(self):
         """Run training & evaluation loop.
@@ -102,10 +112,10 @@ class PolicyGradient:
 
         for epoch in range(self.num_epochs):
             # --- Training phase ---
-            epoch_loss, realized_returns = self.train_epoch(epoch)
+            epoch_loss, realized_returns, actions = self.train_epoch(epoch)
 
             # --- Validation phase ---
-            epoch_loss, realized_returns = self.eval_epoch(epoch)
+            epoch_loss, realized_returns, actions = self.eval_epoch(epoch)
 
             # Step the LR scheduler *once per epoch* (if any)
             if self.scheduler is not None:
@@ -116,18 +126,14 @@ class PolicyGradient:
     def evaluate(self, actor: BaseActor | None = None) -> tuple[float, List[float]]:
         if actor is not None:
             self.agent.actor = actor.to(self.device)
-        epoch_loss, realized_returns = self.eval_epoch(-1)
-        return epoch_loss, realized_returns
+        epoch_loss, realized_returns, actions = self.eval_epoch(-1)
+        return epoch_loss, realized_returns, actions
 
     def eval_epoch(self, epoch: int) -> tuple[float, List[float]]:
-        if self.val_loader is None:
-            logging.warning("[PolicyGradient] eval_epoch called but no val_loader was provided.")
-            return {}
-
         # Evaluation mode
         self.agent.actor.eval()
 
-        epoch_loss, realized_returns = self._run_epoch(
+        epoch_loss, realized_returns, actions = self._run_epoch(
             data_loader=self.val_loader,
             epoch=epoch,
             epochs=self.num_epochs,
@@ -142,13 +148,13 @@ class PolicyGradient:
             metrics_str = ", ".join(f"{k}: {v:.4f}" for k, v in epoch_metrics.items())
             logging.info(f"[PolicyGradient] [VAL] Epoch {epoch + 1}/{self.num_epochs} — {metrics_str}")
 
-        return epoch_loss, realized_returns
+        return epoch_loss, realized_returns, actions
 
     def train_epoch(self, epoch: int) -> tuple[float, List[float]]:
         # Training mode
         self.agent.actor.train()
 
-        epoch_loss, realized_returns = self._run_epoch(
+        epoch_loss, realized_returns, actions = self._run_epoch(
             data_loader=self.train_loader,
             epoch=epoch,
             epochs=self.num_epochs,
@@ -163,4 +169,4 @@ class PolicyGradient:
             metrics_str = ", ".join(f"{k}: {v:.4f}" for k, v in epoch_metrics.items())
             logging.info(f"[PolicyGradient] Epoch {epoch + 1}/{self.num_epochs} — {metrics_str}")
 
-        return epoch_loss, realized_returns
+        return epoch_loss, realized_returns, actions

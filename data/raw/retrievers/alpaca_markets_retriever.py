@@ -43,7 +43,7 @@ def _download_from_gdrive():
     _download_file_from_gdrive(
         file_id= "1fBIwQMGOf-cV5IN-psvWqSV2I3MvPum_",
         output_dir='../modeling/checkpoints',
-        file_name="best_model2.pth"
+        file_name="best_model.pth"
     )
     
 
