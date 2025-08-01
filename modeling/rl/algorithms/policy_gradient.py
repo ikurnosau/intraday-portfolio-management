@@ -113,8 +113,9 @@ class PolicyGradient:
 
         return self.train_history, self.val_history
 
-    def evaluate(self, actor: BaseActor) -> tuple[float, List[float]]:
-        self.agent.actor = actor.to(self.device)
+    def evaluate(self, actor: BaseActor | None = None) -> tuple[float, List[float]]:
+        if actor is not None:
+            self.agent.actor = actor.to(self.device)
         epoch_loss, realized_returns = self.eval_epoch(-1)
         return epoch_loss, realized_returns
 
