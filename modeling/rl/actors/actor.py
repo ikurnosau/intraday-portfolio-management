@@ -82,6 +82,11 @@ class RlActor(nn.Module, BaseActor):
 
         v = torch.tanh(self.fc_out(h))  # (B, n_assets)
 
-        action = v / (v.abs().sum(dim=-1, keepdim=True) + 1e-8)  # (B, n_assets)
+        # Forward-pass projection: use ℓ¹-normalised vector for the environment,
+        # but block its gradient so back-prop treats the mapping as identity.
+        with torch.no_grad():
+            action_proj = v / (v.abs().sum(dim=-1, keepdim=True) + 1e-8)
+
+        action = v + (action_proj - v).detach()  # (B, n_assets)
 
         return action

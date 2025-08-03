@@ -21,6 +21,7 @@ class PolicyGradient:
         loss_fn: torch.nn.Module,
         num_epochs: int,
         scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
+        max_grad_norm: float | None = 1.0,
         device: torch.device | str = "cuda",
     ):
         self.agent = agent
@@ -32,6 +33,7 @@ class PolicyGradient:
         self.scheduler = scheduler
         self.loss_fn = loss_fn
         self.num_epochs = num_epochs
+        self.max_grad_norm = max_grad_norm
 
         self.device = torch.device(device)
         self.train_history: List[Dict[str, float]] = []
@@ -92,6 +94,8 @@ class PolicyGradient:
                 if training:
                     self.optimizer.zero_grad()
                     loss.backward()
+                    if self.max_grad_norm is not None:
+                        torch.nn.utils.clip_grad_norm_(self.agent.actor.parameters(), self.max_grad_norm)
                     self.optimizer.step()
 
                 epoch_loss += loss.item()
