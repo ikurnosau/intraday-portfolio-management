@@ -50,3 +50,11 @@ class SignalPredictorActor(nn.Module, BaseActor):
         action = selected / (selected.abs().sum(dim=1, keepdim=True) + 1e-8)
 
         return action
+
+    def train(self, mode: bool = True):
+        """Override nn.Module.train to keep the frozen signal predictor in evaluation
+        mode while still letting the rest of the actor switch as normal."""
+        super().train(mode)
+        if not self.train_signal_predictor:
+            self.signal_predictor.eval()
+        return self

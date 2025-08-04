@@ -5,6 +5,7 @@ import torch.nn as nn
 
 from ..state import State
 from .base_actor import BaseActor
+from ...modeling_utils import smooth_abs
 
 
 class RlActor(nn.Module, BaseActor):
@@ -85,11 +86,15 @@ class RlActor(nn.Module, BaseActor):
 
         v = torch.tanh(self.fc_out(h))  # (B, n_assets)
 
-        # Forward-pass projection: use ℓ¹-normalised vector for the environment,
-        # but block its gradient so back-prop treats the mapping as identity.
-        with torch.no_grad():
-            action_proj = v / (v.abs().sum(dim=-1, keepdim=True) + 1e-8)
-
-        action = v + (action_proj - v).detach()  # (B, n_assets)
+        action =  v / (smooth_abs(v).sum(dim=-1, keepdim=True) + 1e-8)
 
         return action
+
+    def train(self, mode: bool = True):
+        """Override nn.Module.train to keep the frozen signal predictor in evaluation
+        mode while still letting the rest of the actor switch as normal."""
+        super().train(mode)
+
+        if not self.train_signal_predictor:
+            self.signal_predictor.eval()
+        return self
