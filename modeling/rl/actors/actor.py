@@ -13,14 +13,6 @@ class RlActor(nn.Module, BaseActor):
     The allocation vector ``a`` (*) satisfies::
 
         -1 ≤ aᵢ ≤ 1  and  Σ |aᵢ| = 1
-
-    It is produced by sampling a mixture of
-
-    1. **Magnitude** – drawn from a Dirichlet distribution so the positive
-       components sum to 1.
-    2. **Sign**      – independent Bernoulli variables mapping {0,1} → {+1,−1}.
-
-    The method returns a single tensor ``action``.
     """
 
     def __init__(
@@ -43,6 +35,17 @@ class RlActor(nn.Module, BaseActor):
             for p in self.signal_predictor.parameters():
                 p.requires_grad = False
             self.signal_predictor.eval()
+
+        self.register_buffer("mu",  torch.cat([
+            torch.full((n_assets,), 0.50),    # predictor
+            torch.zeros(n_assets),            # position
+            torch.full((n_assets,), 3e-4),    # spread
+        ]))
+        self.register_buffer("sigma", torch.cat([
+            torch.full((n_assets,), 0.05),
+            torch.full((n_assets,), 0.577),   # √(1/3)
+            torch.full((n_assets,), 3e-4),
+        ]))
 
         # --- Build a deeper shared MLP backbone -------------------------------------------------
         # The network depth, dropout probability and use of LayerNorm can be configured via
@@ -76,9 +79,9 @@ class RlActor(nn.Module, BaseActor):
         else:
             signal_repr = self.signal_predictor(state.signal_features)  # (B, n_assets)
 
-        h = self.fc_shared(
-            torch.cat([signal_repr, state.position, state.spread], dim=-1)
-        )  # (B, hidden_dim)
+        features = torch.cat([signal_repr, state.position, state.spread], dim=-1)
+        features = (features - self.mu) / (self.sigma + 1e-8)
+        h = self.fc_shared(features)  # (B, hidden_dim)
 
         v = torch.tanh(self.fc_out(h))  # (B, n_assets)
 

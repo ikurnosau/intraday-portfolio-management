@@ -2,9 +2,16 @@ import torch
 from typing import List
 
 
+class SumLogReturnLoss:
+    def __init__(self, use_baseline: bool = True):
+        self.use_baseline = use_baseline
+
+    def __call__(self, rewards: List[torch.Tensor]) -> torch.Tensor:
+        return sum_log_return_loss(rewards, self.use_baseline)
+
 def sum_log_return_loss(
     rewards: List[torch.Tensor],
-    use_baseline: bool = False,
+    use_baseline: bool = True,
 ) -> torch.Tensor:
     # Shape: (T, batch)
     rewards_t = torch.stack(rewards, dim=0)
