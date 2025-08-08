@@ -8,6 +8,89 @@ from .base_actor import BaseActor
 from ...modeling_utils import smooth_abs
 
 
+class FullyConnectedBackend(nn.Module):
+    def __init__(self, 
+        n_assets: int,
+        hidden_dim: int = 128,
+        num_layers: int = 1,
+        dropout: float = 0.2,
+        use_layer_norm: bool = True
+    ): 
+        super().__init__()
+
+        layers: list[nn.Module] = []
+
+        in_features = n_assets * 3  # predictor output + position + spread
+        for i in range(num_layers):
+            layers.append(nn.Linear(in_features if i == 0 else hidden_dim, hidden_dim))
+
+            if use_layer_norm:
+                layers.append(nn.LayerNorm(hidden_dim))
+
+            layers.append(nn.ReLU())
+
+            if dropout > 0.0:
+                layers.append(nn.Dropout(dropout))
+
+        self.fc_shared = nn.Sequential(*layers)
+
+        # Final projection to the n_assets allocation vector
+        self.fc_out = nn.Linear(hidden_dim, n_assets)
+
+    def forward(self, features: torch.Tensor):
+        h = self.fc_shared(features)  # (B, hidden_dim)
+        v = torch.tanh(self.fc_out(h))  # (B, n_assets)
+        return v
+
+
+class TransformerBackend(nn.Module):
+    def __init__(self,
+        d_model: int=64, 
+        nhead: int=4,
+        num_layers: int=1,
+        dropout: float = 0.2,
+        use_layer_norm: bool = True
+    ):
+        super().__init__()
+        self.d_model = d_model
+        self.dropout = dropout
+        self.use_layer_norm = use_layer_norm
+        
+        input_proj_layers = [nn.Linear(3, d_model)]
+        if use_layer_norm:
+            input_proj_layers.append(nn.LayerNorm(d_model))
+        input_proj_layers.append(nn.ReLU())
+        if dropout > 0.0:
+            input_proj_layers.append(nn.Dropout(dropout))
+        self.input_proj = nn.Sequential(*input_proj_layers)
+
+        # Transformer encoder block with dropout and norm
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=nhead,
+            dropout=dropout,
+            batch_first=True,
+            norm_first=True  # more stable in practice
+        )
+        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+
+        # Output head: produces signed scalar per position in [-1, 1]
+        self.output_head = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(d_model, 1)
+        )
+
+    def forward(self, features: torch.Tensor):
+        signal, position, vol_to_spread = torch.chunk(features, chunks=3, dim=1)
+
+        x = torch.stack([signal, position, vol_to_spread], dim=2)
+        x = self.input_proj(x)  # (batch, n_assets, d_model)
+        x = self.encoder(x)     # (batch, n_assets, d_model)
+        score = torch.tanh(self.output_head(x).squeeze(-1))  # (batch, n_assets)
+
+        return score
+
+
 class RlActor(nn.Module, BaseActor):
     """Policy network mapping :class:`State` → portfolio allocation.
 
@@ -19,16 +102,14 @@ class RlActor(nn.Module, BaseActor):
     def __init__(
         self,
         signal_predictor: nn.Module,
+        backend: nn.Module,
         n_assets: int,
-        hidden_dim: int = 128,
         train_signal_predictor: bool = False,
-        num_layers: int = 1,
-        dropout: float = 0.2,
-        use_layer_norm: bool = True,
         exploration_eps: float = 0.05,
     ):
         super().__init__()
         self.signal_predictor = signal_predictor
+        self.backend = backend
         self.n_assets = n_assets
         self.exploration_eps = exploration_eps
 
@@ -50,31 +131,6 @@ class RlActor(nn.Module, BaseActor):
             torch.full((n_assets,), 4.59),
         ]))
 
-        # --- Build a deeper shared MLP backbone -------------------------------------------------
-        # The network depth, dropout probability and use of LayerNorm can be configured via
-        # constructor arguments. This makes the actor more flexible while preserving backward
-        # compatibility with previous checkpoints that relied on the single-layer layout.
-
-        layers: list[nn.Module] = []
-
-        in_features = n_assets * 3  # predictor output + position + spread
-        for i in range(num_layers):
-            layers.append(nn.Linear(in_features if i == 0 else hidden_dim, hidden_dim))
-
-            if use_layer_norm:
-                layers.append(nn.LayerNorm(hidden_dim))
-
-            layers.append(nn.ReLU())
-
-            if dropout > 0.0:
-                layers.append(nn.Dropout(dropout))
-
-        self.fc_shared = nn.Sequential(*layers)
-
-        # Final projection to the n_assets allocation vector
-        self.fc_out = nn.Linear(hidden_dim, n_assets)
-
-
     def forward(self, state: State):
         if not self.train_signal_predictor:
             with torch.no_grad():
@@ -84,9 +140,7 @@ class RlActor(nn.Module, BaseActor):
 
         features = torch.cat([signal_repr, state.position, state.volatility / state.spread], dim=-1)
         features = (features - self.mu) / (self.sigma + 1e-8)
-        h = self.fc_shared(features)  # (B, hidden_dim)
-
-        v = torch.tanh(self.fc_out(h))  # (B, n_assets)
+        v = self.backend(features)  # (B, n_assets)
 
         if self.training and self.exploration_eps > 0.0:
             noise = self.exploration_eps * torch.randn_like(v)
