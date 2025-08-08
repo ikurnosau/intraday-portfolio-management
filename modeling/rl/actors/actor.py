@@ -88,16 +88,11 @@ class RlActor(nn.Module, BaseActor):
 
         v = torch.tanh(self.fc_out(h))  # (B, n_assets)
 
-        action =  v / (smooth_abs(v).sum(dim=-1, keepdim=True) + 1e-8)
-
-        # --- Single-stock exploration jitter ---------------------------------
         if self.training and self.exploration_eps > 0.0:
-            B, A = action.shape
-            idx = torch.randint(low=0, high=A, size=(B,), device=action.device)
-            jitter = torch.zeros_like(action)
-            jitter[torch.arange(B), idx] = self.exploration_eps * torch.randn(B, device=action.device)
-            noisy = action + jitter
-            action = noisy / (smooth_abs(noisy).sum(dim=-1, keepdim=True) + 1e-8)
+            noise = self.exploration_eps * torch.randn_like(v)
+            v = v + noise
+
+        action = v / (smooth_abs(v).sum(dim=-1, keepdim=True) + 1e-8)
 
         return action
 
