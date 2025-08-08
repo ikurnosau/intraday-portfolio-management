@@ -39,7 +39,8 @@ class FullyConnectedBackend(nn.Module):
 
     def forward(self, features: torch.Tensor):
         h = self.fc_shared(features)  # (B, hidden_dim)
-        v = torch.tanh(self.fc_out(h))  # (B, n_assets)
+        # v = torch.tanh(self.fc_out(h))  # (B, n_assets)
+        v = self.fc_out(h)  # (B, n_assets)
         return v
 
 
