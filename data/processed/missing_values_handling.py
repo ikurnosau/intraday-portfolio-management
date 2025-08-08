@@ -23,6 +23,10 @@ class ForwardFillFlatBars:
                        .rename(columns={'index':'date'}))
         
         data_filled['close'] = data_filled['close'].ffill()
+        if 'ask_price' in data_filled.columns:
+            data_filled['ask_price'] = data_filled['ask_price'].ffill()
+        if 'bid_price' in data_filled.columns:
+            data_filled['bid_price'] = data_filled['bid_price'].ffill()
 
         missing = data_filled['volume'].isna()
 

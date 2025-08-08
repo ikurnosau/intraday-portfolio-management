@@ -42,12 +42,12 @@ class RlActor(nn.Module, BaseActor):
         self.register_buffer("mu",  torch.cat([
             torch.full((n_assets,), 0.50),    # predictor
             torch.zeros(n_assets),            # position
-            torch.full((n_assets,), 3e-4),    # spread
+            torch.full((n_assets,), 4.29),    # vol/spread
         ]))
         self.register_buffer("sigma", torch.cat([
             torch.full((n_assets,), 0.05),
             torch.full((n_assets,), 0.577),   # √(1/3)
-            torch.full((n_assets,), 3e-4),
+            torch.full((n_assets,), 4.59),
         ]))
 
         # --- Build a deeper shared MLP backbone -------------------------------------------------
@@ -82,7 +82,7 @@ class RlActor(nn.Module, BaseActor):
         else:
             signal_repr = self.signal_predictor(state.signal_features)  # (B, n_assets)
 
-        features = torch.cat([signal_repr, state.position, state.spread], dim=-1)
+        features = torch.cat([signal_repr, state.position, state.volatility / state.spread], dim=-1)
         features = (features - self.mu) / (self.sigma + 1e-8)
         h = self.fc_shared(features)  # (B, hidden_dim)
 

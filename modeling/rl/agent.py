@@ -47,11 +47,13 @@ class RlAgent:
         signal_features_trajectory_batch: torch.Tensor,
         next_returns_trajectory_batch: torch.Tensor,
         spreads_trajectory_batch: torch.Tensor,
+        volatility_trajectory_batch: torch.Tensor,
     ):
         self.current_state = self.env.reset(
             signal_features_trajectory_batch=signal_features_trajectory_batch,
             next_returns_trajectory_batch=next_returns_trajectory_batch,
             spreads_trajectory_batch=spreads_trajectory_batch,
+            volatility_trajectory_batch=volatility_trajectory_batch,
         )
 
         if self.single_action_per_trajectory:

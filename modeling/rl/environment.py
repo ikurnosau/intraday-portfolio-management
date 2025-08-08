@@ -24,6 +24,7 @@ class PortfolioEnvironment:
         self.signal_features_trajectory_batch = None
         self.next_returns_trajectory_batch = None
         self.spreads_trajectory_batch = None
+        self.volatility_trajectory_batch = None
         self.state_index = None
         self.current_state = None
 
@@ -32,6 +33,7 @@ class PortfolioEnvironment:
             signal_features=self.signal_features_trajectory_batch[:, i, :, :, :],
             next_step_return=self.next_returns_trajectory_batch[:, i, :],
             spread=self.spreads_trajectory_batch[:, i, :],
+            volatility=self.volatility_trajectory_batch[:, i, :],
             position=torch.zeros(self.spreads_trajectory_batch[:, i, :].shape).to(self.spreads_trajectory_batch.device),
         )
 
@@ -39,6 +41,7 @@ class PortfolioEnvironment:
         signal_features_trajectory_batch: torch.Tensor,
         next_returns_trajectory_batch: torch.Tensor,
         spreads_trajectory_batch: torch.Tensor,
+        volatility_trajectory_batch: torch.Tensor,
     ) -> State:
         """
         signal_features_trajectory_batch: (batch_size, trajectory_length, n_assets, seq_len, n_features)
@@ -49,6 +52,7 @@ class PortfolioEnvironment:
         self.signal_features_trajectory_batch = signal_features_trajectory_batch
         self.next_returns_trajectory_batch = next_returns_trajectory_batch
         self.spreads_trajectory_batch = spreads_trajectory_batch
+        self.volatility_trajectory_batch = volatility_trajectory_batch
         self.state_index = 0
         self.current_state = self._prepare_state_template(self.state_index)
 

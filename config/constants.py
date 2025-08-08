@@ -30,6 +30,39 @@ class Constants:
             'VOO', 'WFC', 'XBI', 'XLC', 'XLE', 'XLI', 
             'XLK', 'XLU', 'XLV', 'XLY', 'XOM', 'XRT']
 
+        DJIA = [
+            # "MMM",  # 3M
+            "AXP",  # American Express
+            # "AMGN", # Amgen
+            # "AMZN", # Amazon
+            # "AAPL", # Apple
+            # "BA",   # Boeing
+            # "CAT",  # Caterpillar
+            # "CVX",  # Chevron
+            # "CSCO", # Cisco
+            # "KO",   # Coca-Cola
+            # "DIS",  # Disney
+            # "GS",   # Goldman Sachs
+            # "HD",   # Home Depot
+            # "HON",  # Honeywell
+            # "IBM",  # IBM
+            # "JNJ",  # Johnson & Johnson
+            # "JPM",  # JPMorgan Chase
+            # "MCD",  # McDonald's
+            # "MRK",  # Merck
+            # "MSFT", # Microsoft
+            # "NKE",  # Nike
+            # "NVDA", # NVIDIA
+            # "PG",   # Procter & Gamble
+            # "CRM",  # Salesforce
+            # "SHW",  # Sherwin-Williams
+            # "TRV",  # Travelers
+            # "UNH",  # UnitedHealth Group
+            # "VZ",   # Verizon
+            # "V",    # Visa
+            # "WMT"   # Walmart
+        ]
+
         REGULAR_TRADING_HOURS_START = pd.to_datetime("13:30:00").time()
         REGULAR_TRADING_HOURS_END = pd.to_datetime("20:00:00").time()
         

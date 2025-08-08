@@ -55,6 +55,7 @@ class PolicyGradient:
                 signal_features_trajectory_batch,
                 next_returns_trajectory_batch,
                 spreads_trajectory_batch,
+                volatility_trajectory_batch,
             ) in tqdm(
                 data_loader,
                 desc=("Train" if training else "Val") + f" Epoch {epoch + 1}/{epochs}",
@@ -63,11 +64,13 @@ class PolicyGradient:
                 signal_features_trajectory_batch = signal_features_trajectory_batch.to(self.device, non_blocking=True)
                 next_returns_trajectory_batch = next_returns_trajectory_batch.to(self.device, non_blocking=True)
                 spreads_trajectory_batch = spreads_trajectory_batch.to(self.device, non_blocking=True)
+                volatility_trajectory_batch = volatility_trajectory_batch.to(self.device, non_blocking=True)
 
                 trajectory = self.agent.generate_trajectory(
                     signal_features_trajectory_batch=signal_features_trajectory_batch,
                     next_returns_trajectory_batch=next_returns_trajectory_batch,
                     spreads_trajectory_batch=spreads_trajectory_batch,
+                    volatility_trajectory_batch=volatility_trajectory_batch,
                 )
 
                 if not trajectory:

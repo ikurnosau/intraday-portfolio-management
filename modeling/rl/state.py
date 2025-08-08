@@ -9,4 +9,5 @@ class State:
     signal_features: torch.Tensor
     next_step_return: torch.Tensor
     spread: torch.Tensor
+    volatility: torch.Tensor
     position: torch.Tensor

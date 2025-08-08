@@ -6,7 +6,7 @@ from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest, StockQuotesRequest, StockLatestQuoteRequest
 from alpaca.data.timeframe import TimeFrame
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pandas as pd
 from dotenv import load_dotenv
 import os
@@ -140,6 +140,7 @@ class AlpacaMarketsRetriever:
     def _quote_estimation(self, symbol: str, start: datetime, end: datetime) -> dict[str: float]:
         start = pd.to_datetime(start)
         start = datetime.combine(start.date(), Constants.Data.REGULAR_TRADING_HOURS_START) + timedelta(hours=2)
+        start = start.replace(tzinfo=timezone.utc)        # re-attach UTC
 
         rng = pd.date_range(start=start,
                             end=end,

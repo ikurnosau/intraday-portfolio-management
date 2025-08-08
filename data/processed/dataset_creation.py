@@ -45,6 +45,8 @@ class DatasetCreator:
                                  np.ndarray,
                                  np.ndarray,
                                  np.ndarray,
+                                  np.ndarray,
+                                  np.ndarray,
                              ]:
         """High-level orchestrator that transforms raw per-asset OHLCV data into
         numpy arrays suitable for model consumption.
@@ -80,19 +82,21 @@ class DatasetCreator:
 
         train_dict, test_dict = self._train_test_split(processed_assets)
 
-        X_train, y_train, next_return_train, spread_train = self._to_numpy_and_stack(train_dict)
-        X_test, y_test, next_return_test, spread_test = self._to_numpy_and_stack(test_dict) \
-            if self.include_test_data else (None, None, None, None)
+        X_train, y_train, next_return_train, spread_train, volatility_train = self._to_numpy_and_stack(train_dict)
+        X_test, y_test, next_return_test, spread_test, volatility_test = self._to_numpy_and_stack(test_dict) \
+            if self.include_test_data else (None, None, None, None, None)
 
         return (
             X_train,
             y_train,
             next_return_train,
             spread_train,
+            volatility_train,
             X_test,
             y_test,
             next_return_test,
             spread_test,
+            volatility_test,
         )
 
     def _process_single_asset(self, asset_df: pd.DataFrame, *, date_column: str = 'date') -> pd.DataFrame:
@@ -127,6 +131,9 @@ class DatasetCreator:
 
         base_feature = getattr(self.target, 'base_feature', 'close')
         feat_df['next_return'] = asset_df[base_feature].pct_change().shift(-1).astype(np.float32)
+        # Volatility based on returns over the previous 10 records
+        rolling_returns = asset_df[base_feature].pct_change().astype(np.float32)
+        feat_df['volatility'] = rolling_returns.rolling(window=10).std().fillna(0.0).astype(np.float32)
         feat_df = feat_df.dropna(subset=["next_return"]).reset_index(drop=True)
 
         if {'ask_price', 'bid_price'}.issubset(asset_df.columns):
@@ -136,6 +143,7 @@ class DatasetCreator:
         else:
             logging.warning("'ask_price' or 'bid_price' column missing; filling spread with 0.")
             feat_df['spread'] = 0.0
+        logging.info(f"Spread has {feat_df['spread'].isna().sum()} NaNs")
         feat_df['spread'] = feat_df['spread'].fillna(0.0).astype(np.float32)
 
         if self.cutoff_time is not None:
@@ -164,8 +172,8 @@ class DatasetCreator:
     def _to_numpy_and_stack(
         self,
         per_asset_df: dict[str, pd.DataFrame],
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Convert a per-asset DataFrame dictionary into stacked (X, y, next_ret, spread) numpy arrays.
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Convert a per-asset DataFrame dictionary into stacked (X, y, next_ret, spread, volatility) numpy arrays.
 
         This consolidates all logic that was previously duplicated for the train and test
         splits inside ``create_dataset_numpy``:
@@ -178,7 +186,7 @@ class DatasetCreator:
         """
 
         per_asset_X = {
-            a: df.drop(["date", "target", "next_return", "spread"], axis=1).to_numpy(dtype=np.float32)
+            a: df.drop(["date", "target", "next_return", "spread", "volatility"], axis=1).to_numpy(dtype=np.float32)
             for a, df in per_asset_df.items()
         }
         per_asset_y = {a: df["target"].to_numpy(dtype=np.float32) for a, df in per_asset_df.items()}
@@ -188,18 +196,22 @@ class DatasetCreator:
         per_asset_spread = {
             a: df["spread"].to_numpy(dtype=np.float32) for a, df in per_asset_df.items()
         }
+        per_asset_volatility = {
+            a: df["volatility"].to_numpy(dtype=np.float32) for a, df in per_asset_df.items()
+        }
 
-        X, y, next_ret, spread = self._stack(
+        X, y, next_ret, spread, volatility = self._stack(
             per_asset_X,
             per_asset_y,
             per_asset_next_return,
             per_asset_spread,
+            per_asset_volatility,
         )
 
         # Convert to sequential format if required
         if self.in_seq_len > 1:
-            X, y, next_ret, spread = self.transform_data_to_sequential(
-                X, y, next_ret, spread
+            X, y, next_ret, spread, volatility = self.transform_data_to_sequential(
+                X, y, next_ret, spread, volatility
             )
 
         if self.multi_asset_prediction:
@@ -207,8 +219,9 @@ class DatasetCreator:
             y = np.swapaxes(y, 0, 1)
             next_ret = np.swapaxes(next_ret, 0, 1)
             spread = np.swapaxes(spread, 0, 1)
+            volatility = np.swapaxes(volatility, 0, 1)
 
-        return X, y, next_ret, spread
+        return X, y, next_ret, spread, volatility
 
     def _stack(
         self,
@@ -216,7 +229,8 @@ class DatasetCreator:
         per_asset_y: dict[str, np.ndarray],
         per_asset_next_ret: dict[str, np.ndarray],
         per_asset_spread: dict[str, np.ndarray],
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        per_asset_volatility: dict[str, np.ndarray],
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Combine per-asset arrays into final tensors.
 
         X  → (asset, batch, features) or (batch, features)
@@ -229,15 +243,23 @@ class DatasetCreator:
             y = np.stack(list(per_asset_y.values()), axis=0)
             next_ret = np.stack(list(per_asset_next_ret.values()), axis=0)
             spread = np.stack(list(per_asset_spread.values()), axis=0)
+            volatility = np.stack(list(per_asset_volatility.values()), axis=0)
         else:
             X = np.vstack(list(per_asset_X.values()))
             y = np.concatenate(list(per_asset_y.values()))
             next_ret = np.concatenate(list(per_asset_next_ret.values()))
             spread = np.concatenate(list(per_asset_spread.values()))
+            volatility = np.concatenate(list(per_asset_volatility.values()))
 
-        return X.astype(np.float32), y.astype(np.float32), next_ret.astype(np.float32), spread.astype(np.float32)
+        return (
+            X.astype(np.float32),
+            y.astype(np.float32),
+            next_ret.astype(np.float32),
+            spread.astype(np.float32),
+            volatility.astype(np.float32),
+        )
 
-    def transform_data_to_sequential(self, X: np.ndarray, y: np.ndarray, next_ret: np.ndarray, spread: np.ndarray):
+    def transform_data_to_sequential(self, X: np.ndarray, y: np.ndarray, next_ret: np.ndarray, spread: np.ndarray, volatility: np.ndarray):
         """Convert flat [batch, feat] data into sliding-window sequences along the *batch* axis.
 
         The sliding window is applied one axis before the last (which is the feature dimension). For
@@ -251,5 +273,6 @@ class DatasetCreator:
         y_seq = y[..., self.in_seq_len - 1:]
         next_ret_seq = next_ret[..., self.in_seq_len - 1:]
         spread_seq = spread[..., self.in_seq_len - 1:]
+        volatility_seq = volatility[..., self.in_seq_len - 1:]
 
-        return X_seq, y_seq, next_ret_seq, spread_seq
+        return X_seq, y_seq, next_ret_seq, spread_seq, volatility_seq

@@ -5,10 +5,11 @@ from typing import Literal
 
 
 class TrajectoryDataset(Dataset):
-    def __init__(self, signal_features: np.ndarray, next_returns: np.ndarray, spreads: np.ndarray, trajectory_length: int):
+    def __init__(self, signal_features: np.ndarray, next_returns: np.ndarray, spreads: np.ndarray, volatility: np.ndarray, trajectory_length: int):
         self.signal_features = torch.tensor(signal_features, dtype=torch.float32)
         self.next_returns = torch.tensor(next_returns, dtype=torch.float32)
         self.spreads = torch.tensor(spreads, dtype=torch.float32)
+        self.volatility = torch.tensor(volatility, dtype=torch.float32)
         self.trajectory_length = trajectory_length
 
     def __len__(self):
@@ -17,7 +18,7 @@ class TrajectoryDataset(Dataset):
     def __getitem__(self, idx):
         start_idx = idx * self.trajectory_length
         end_idx = start_idx + self.trajectory_length
-        return self.signal_features[start_idx:end_idx], self.next_returns[start_idx:end_idx], self.spreads[start_idx:end_idx]
+        return self.signal_features[start_idx:end_idx], self.next_returns[start_idx:end_idx], self.spreads[start_idx:end_idx], self.volatility[start_idx:end_idx]
     
     def as_dataloader(self, batch_size: int=8, shuffle: bool=True, num_workers=8, prefetch_factor=4, pin_memory=True, persistent_workers=True, drop_last=True): 
         return DataLoader(
