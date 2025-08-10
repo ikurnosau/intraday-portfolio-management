@@ -125,23 +125,20 @@ class Balanced5ClassClassification:
         self.q60: float | None = None
         self.q80: float | None = None
 
+    def _calculate_returns(self, data: pd.DataFrame) -> pd.Series:
+        raise NotImplementedError("Subclasses must implement this method")
+
     # ------------------------------------------------------------------
     # Fitting (training-set only)
     # ------------------------------------------------------------------
     def fit(self, train_df: pd.DataFrame):
         """Compute quintile boundaries from *train_df* only."""
-        returns = train_df[self.base_feature].pct_change()
-        future_mean_return = (
-            returns.shift(-1)
-            .rolling(window=self.horizon, min_periods=self.horizon)
-            .mean()
-            .shift(-(self.horizon - 1))
-        ).dropna()
+        returns = self._calculate_returns(train_df).dropna()
         
-        self.q20 = future_mean_return.quantile(0.20)
-        self.q40 = future_mean_return.quantile(0.40)
-        self.q60 = future_mean_return.quantile(0.60)
-        self.q80 = future_mean_return.quantile(0.80)
+        self.q20 = returns.quantile(0.20)
+        self.q40 = returns.quantile(0.40)
+        self.q60 = returns.quantile(0.60)
+        self.q80 = returns.quantile(0.80)
 
     # ------------------------------------------------------------------
     # Encoding
@@ -151,13 +148,7 @@ class Balanced5ClassClassification:
         if None in {self.q20, self.q40, self.q60, self.q80}:  # type: ignore[comparison-overlap]
             raise RuntimeError("Balanced5ClassClassification.fit() must be called before generating targets.")
 
-        returns = data[self.base_feature].pct_change()
-        future_mean_return = (
-            returns.shift(-1)
-            .rolling(window=self.horizon, min_periods=self.horizon)
-            .mean()
-            .shift(-(self.horizon - 1))
-        )
+        returns = self._calculate_returns(data)
 
         def encode(r: float | np.float64):
             if r < self.q20:
@@ -171,5 +162,30 @@ class Balanced5ClassClassification:
             else:
                 return self._class_values[4]
 
-        target = future_mean_return.apply(encode).astype(np.float32)
+        target = returns.apply(encode).astype(np.float32)
         return target
+
+
+class FutureMeanReturnClassification(Balanced5ClassClassification):
+    def _calculate_returns(self, data: pd.DataFrame) -> pd.Series:
+        returns = data[self.base_feature].pct_change()
+        future_mean_return = (
+            returns.shift(-self.horizon)
+            .rolling(window=self.horizon, min_periods=self.horizon)
+            .mean()
+        )
+        return future_mean_return
+
+
+class FutureHorizonReturnClassification(Balanced5ClassClassification):
+    """Balanced 5-class target based on the total return over the next horizon.
+
+    For each timestamp t, computes the cumulative simple return across the next
+    `horizon` periods as (P[t+horizon] / P[t]) - 1 and then encodes it into
+    quintile-based classes using the training-set thresholds.
+    """
+
+    def _calculate_returns(self, data: pd.DataFrame) -> pd.Series:
+        prices = data[self.base_feature]
+        future_total_return = prices.shift(-self.horizon) / prices - 1.0
+        return future_total_return

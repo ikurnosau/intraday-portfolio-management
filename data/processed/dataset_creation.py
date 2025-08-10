@@ -11,6 +11,7 @@ import logging
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 from data.processed.data_processing_utils import filter_by_regular_hours
+from config.constants import Constants
 
 
 class DatasetCreator: 
@@ -148,6 +149,9 @@ class DatasetCreator:
 
         if self.cutoff_time is not None:
             feat_df = feat_df[feat_df['date'].dt.time >= self.cutoff_time]
+
+        if hasattr(self.target, "horizon"):
+            feat_df = feat_df[feat_df['date'].dt.time <= Constants.Data.REGULAR_TRADING_HOURS_END - self.target.horizon]
 
         num_null_rows = feat_df.isnull().any(axis=1).sum()
         if num_null_rows:

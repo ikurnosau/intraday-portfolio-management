@@ -9,7 +9,7 @@ import numpy as np
 from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig, ObservabilityConfig
 from config.constants import Constants
 from data.processed.indicators import *
-from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification, FutureMeanReturnClassification, FutureHorizonReturnClassification
+from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification
 from data.processed.normalization import MinMaxNormalizer, ZScoreOverWindowNormalizer, MinMaxNormalizerOverWindow
 from data.processed.missing_values_handling import ForwardFillFlatBars, DummyMissingValuesHandler
 from modeling.models.tsa_classifier import TemporalSpatial
@@ -19,9 +19,9 @@ from modeling.models.tcn import TCN
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
 data_config = DataConfig(
-    symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
-    start=datetime(2024, 6, 1, tzinfo=timezone.utc),
-    end=datetime(2025, 6, 1, tzinfo=timezone.utc),
+    symbol_or_symbols=Constants.Data.DJIA,
+    start=datetime(2016, 1, 1, tzinfo=timezone.utc),
+    end=datetime(2018, 1, 1, tzinfo=timezone.utc),
 
     features={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------
@@ -55,10 +55,10 @@ data_config = DataConfig(
                              .rolling(10).std()
                              / (df['close'].pct_change().rolling(20).std() + 1e-8)
     },
-    target=FutureMeanReturnClassification(base_feature='close', horizon=1),
+    target=Balanced5ClassClassification(base_feature='close', horizon=1),
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
     missing_values_handler=ForwardFillFlatBars(),
-    train_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc), 
+    train_set_last_date=datetime(2017, 1, 1, tzinfo=timezone.utc), 
     in_seq_len=120,
     multi_asset_prediction=True,
 
