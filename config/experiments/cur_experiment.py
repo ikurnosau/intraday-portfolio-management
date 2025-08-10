@@ -9,7 +9,7 @@ import numpy as np
 from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig, ObservabilityConfig
 from config.constants import Constants
 from data.processed.indicators import *
-from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification
+from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification, FutureHorizonReturnClassification
 from data.processed.normalization import MinMaxNormalizer, ZScoreOverWindowNormalizer, MinMaxNormalizerOverWindow
 from data.processed.missing_values_handling import ForwardFillFlatBars, DummyMissingValuesHandler
 from modeling.models.tsa_classifier import TemporalSpatial
@@ -55,7 +55,7 @@ data_config = DataConfig(
                              .rolling(10).std()
                              / (df['close'].pct_change().rolling(20).std() + 1e-8)
     },
-    target=Balanced5ClassClassification(base_feature='close', horizon=1),
+    target=FutureHorizonReturnClassification(base_feature='close', horizon=60),
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
     missing_values_handler=ForwardFillFlatBars(),
     train_set_last_date=datetime(2017, 1, 1, tzinfo=timezone.utc), 
