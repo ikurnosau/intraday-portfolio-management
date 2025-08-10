@@ -4,7 +4,7 @@ sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 
 import pandas as pd
 from typing import Callable, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
 import datetime as datetime_lib
 
 import logging
@@ -151,7 +151,8 @@ class DatasetCreator:
             feat_df = feat_df[feat_df['date'].dt.time >= self.cutoff_time]
 
         if hasattr(self.target, "horizon"):
-            feat_df = feat_df[feat_df['date'].dt.time <= Constants.Data.REGULAR_TRADING_HOURS_END - self.target.horizon]
+            new_end_time = (datetime.combine(datetime.today(), Constants.Data.REGULAR_TRADING_HOURS_END) - timedelta(minutes=self.target.horizon)).time()
+            feat_df = feat_df[feat_df['date'].dt.time <= new_end_time]
 
         num_null_rows = feat_df.isnull().any(axis=1).sum()
         if num_null_rows:
