@@ -113,6 +113,7 @@ train_config = TrainConfig(
     },
     metrics={"rmse": rmse_regression},
     num_epochs=20,
+    early_stopping_patience=5,
 
     device=torch.device("cuda"),
     cudnn_benchmark=True,

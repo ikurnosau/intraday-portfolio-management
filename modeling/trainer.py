@@ -17,6 +17,7 @@ class Trainer:
                  optimizer: Optimizer,
                  scheduler: Union[LRScheduler, dict],
                  num_epochs: int=25,
+                 early_stopping_patience: int=5,
                  device: torch.device=None,
                  metrics: dict[str, Callable]=None,
                  save_path: str=None): 
@@ -26,6 +27,7 @@ class Trainer:
         self.loss_fn = loss_fn
         self.optimizer = optimizer
         self.num_epochs = num_epochs
+        self.early_stopping_patience = early_stopping_patience
         self.metrics = metrics
         self.save_path = save_path
 
@@ -64,6 +66,7 @@ class Trainer:
     def train(self): 
         history = {"train_loss": [], "val_loss": []}
         best_loss = float('inf')
+        best_epoch = 0
         best_model_state = None  # Will store a deepcopy of the best weights
 
         if self.metrics:
@@ -80,6 +83,8 @@ class Trainer:
             if self.scheduler is not None:
                 if isinstance(self.scheduler, ReduceLROnPlateau):
                     self.scheduler.step(val_loss)
+                elif isinstance(self.scheduler, OneCycleLR):
+                    pass
                 else:
                     self.scheduler.step()
 
@@ -104,6 +109,7 @@ class Trainer:
             # Save model
             if val_loss < best_loss:
                 best_loss = val_loss
+                best_epoch = epoch
 
                 # If DataParallel was used, the underlying model weights live
                 # in the `.module` attribute.  Save a clean state_dict so the
@@ -124,6 +130,10 @@ class Trainer:
                     logging.info(
                         f"Best model saved to {self.save_path} with loss value: {best_loss:.4f}\n"
                     )
+
+            if epoch - best_epoch >= self.early_stopping_patience:
+                logging.info(f"Early stopping triggered at epoch {epoch}")
+                break
 
         # After all epochs complete, ensure that the model holds the best-performing weights
         if best_model_state is not None:
@@ -151,6 +161,9 @@ class Trainer:
             # Clip gradients to prevent exploding gradients and stabilize training
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.optimizer.step()
+
+            if isinstance(self.scheduler, OneCycleLR):
+                self.scheduler.step()
 
             total_loss += loss.item()
 

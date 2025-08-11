@@ -35,6 +35,7 @@ class TrainConfig:
     optimizer: Optimizer
     scheduler: LRScheduler | dict  # allow passing configuration dicts
     num_epochs: int
+    early_stopping_patience: int
 
     # --- hardware / runtime ------------------------------------------------
     device: torch.device
