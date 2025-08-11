@@ -9,7 +9,7 @@ import numpy as np
 from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig, ObservabilityConfig
 from config.constants import Constants
 from data.processed.indicators import *
-from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification
+from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification, FutureMeanReturnClassification
 from data.processed.normalization import MinMaxNormalizer, ZScoreOverWindowNormalizer, MinMaxNormalizerOverWindow
 from data.processed.missing_values_handling import ForwardFillFlatBars, DummyMissingValuesHandler
 from modeling.models.tsa_classifier import TemporalSpatial
@@ -55,11 +55,11 @@ data_config = DataConfig(
                              .rolling(10).std()
                              / (df['close'].pct_change().rolling(20).std() + 1e-8)
     },
-    target=Balanced5ClassClassification(base_feature='close', horizon=1),
+    target=FutureMeanReturnClassification(base_feature='close', horizon=1),
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
     missing_values_handler=ForwardFillFlatBars(),
     train_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc), 
-    in_seq_len=120,
+    in_seq_len=60,
     multi_asset_prediction=True,
 
     cutoff_time=time(hour=14, minute=10),
@@ -70,14 +70,14 @@ model_config = ModelConfig(
     model=TemporalSpatial(
         input_dim=len(data_config.features),
         output_dim=1,  # regression
-        hidden_dim=256,
-        lstm_layers=4,
+        hidden_dim=128,
+        lstm_layers=2,
         bidirectional=True,
         dropout=0.2,
         num_heads=4,
         use_spatial_attention=True,
         num_assets=len(data_config.symbol_or_symbols),
-        asset_embed_dim=32,
+        asset_embed_dim=16,
     ),
     # model=TCN(
     #     in_channels=len(data_config.features),
@@ -112,6 +112,7 @@ train_config = TrainConfig(
     },
     metrics={"rmse": rmse_regression},
     num_epochs=20,
+    early_stopping_patience=5,
 
     device=torch.device("cuda"),
     cudnn_benchmark=True,
