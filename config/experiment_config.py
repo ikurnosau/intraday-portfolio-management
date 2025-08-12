@@ -4,10 +4,12 @@ from dataclasses import dataclass
 import torch
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
+from alpaca.data.timeframe import TimeFrame
 
 @dataclass
 class DataConfig: 
     symbol_or_symbols: str | list[str]
+    frequency: TimeFrame
     start: datetime
     end: datetime
 

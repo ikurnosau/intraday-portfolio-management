@@ -9,6 +9,9 @@ class DummyMissingValuesHandler:
 
 
 class ForwardFillFlatBars:
+    def __init__(self, frequency: str):
+        self.frequency = frequency
+
     def __call__(self, data: pd.DataFrame) -> pd.DataFrame:
         data_orig = data.copy()
 
@@ -17,7 +20,7 @@ class ForwardFillFlatBars:
 
         data_filled = (data
                        .groupby(data.index.date)
-                       .apply(self.fill_day_minutes)
+                       .apply(self.fill_day)
                        .droplevel(0)
                        .reset_index()
                        .rename(columns={'index':'date'}))
@@ -37,7 +40,8 @@ class ForwardFillFlatBars:
         data_filled.loc[missing, 'low'] = data_filled.loc[missing, 'close']
         data_filled.loc[missing, 'volume'] = 0        
 
-        self.test_original_data_preserved(data_orig, data_filled)
+        if self.frequency == 'min':
+            self.test_original_data_preserved(data_orig, data_filled)
 
         return data_filled.reset_index(drop=True)
     
@@ -57,12 +61,11 @@ class ForwardFillFlatBars:
             check_exact=True
         )
 
-    @staticmethod
-    def fill_day_minutes(day_slice):
+    def fill_day(self, day_slice):
         day = day_slice.index[0].normalize()  # midnight of that day
         full_idx = pd.date_range(
-            start=day + pd.Timedelta(hours=13, minutes=30),
+            start=day + pd.Timedelta(hours=13, minutes=30) if self.frequency == 'min' else day + pd.Timedelta(hours=14),
             end=  day + pd.Timedelta(hours=20,     minutes=0),
-            freq='min'
+            freq=self.frequency
         )
         return day_slice.reindex(full_idx)

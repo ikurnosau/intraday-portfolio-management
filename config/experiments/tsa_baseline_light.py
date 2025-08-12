@@ -5,7 +5,6 @@ sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 from datetime import datetime, timezone, time
 import torch
 import numpy as np
-from alpaca.data.timeframe import TimeFrame
 
 from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig, ObservabilityConfig
 from config.constants import Constants
@@ -19,14 +18,10 @@ from modeling.models.mlp import MLP
 from modeling.models.tcn import TCN
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
-
-frequency = TimeFrame.Hour
-
 data_config = DataConfig(
     symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
-    frequency=frequency,
-    start=datetime(2022, 1, 1, tzinfo=timezone.utc),
-    end=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    start=datetime(2024, 6, 1),
+    end=datetime(2025, 6, 1),
 
     features={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------
@@ -62,12 +57,12 @@ data_config = DataConfig(
     },
     target=FutureMeanReturnClassification(base_feature='close', horizon=1),
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
-    missing_values_handler=ForwardFillFlatBars(frequency='min' if str(frequency) == '1Min' else ('h' if str(frequency) == '1Hour' else 'unknown')),
-    train_set_last_date=datetime(2024, 1, 1, tzinfo=timezone.utc), 
+    missing_values_handler=ForwardFillFlatBars(),
+    train_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc), 
     in_seq_len=60,
     multi_asset_prediction=True,
 
-    cutoff_time=time(hour=13, minute=59),
+    cutoff_time=time(hour=14, minute=10),
 )
 
 
