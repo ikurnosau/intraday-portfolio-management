@@ -57,29 +57,12 @@ class DatasetCreator:
         """
 
         processed_assets: dict[str, pd.DataFrame] = {}
-        skipped_assets: list[str] = []
-
         for asset_name, asset_df in data.items():
-            logging.info(f"Processing {asset_name} …")
+            logging.info("Processing %s …", asset_name)
             features_df = self._process_single_asset(asset_df, date_column=date_column)
+            processed_assets[asset_name] = features_df
 
-            if not processed_assets:
-                required_rows = len(features_df)
-            else:
-                required_rows = len(next(iter(processed_assets.values())))
-
-            if len(features_df) == required_rows:
-                processed_assets[asset_name] = features_df
-            else:
-                logging.info(
-                    f"{asset_name} has {len(features_df)} rows, but {required_rows} are "
-                    "expected. Skipping …"
-                )
-                skipped_assets.append(asset_name)
-
-        logging.info(
-            f"Finished feature generation. {len(skipped_assets)} assets skipped due to insufficient rows."
-        )
+        processed_assets = self._filter_and_align_assets(processed_assets, date_column=date_column)
 
         train_dict, test_dict = self._train_test_split(processed_assets)
 
@@ -144,7 +127,7 @@ class DatasetCreator:
         else:
             logging.warning("'ask_price' or 'bid_price' column missing; filling spread with 0.")
             feat_df['spread'] = 0.0
-        logging.info(f"Spread has {feat_df['spread'].isna().sum()} NaNs")
+        logging.info("Spread has %d NaNs", int(feat_df['spread'].isna().sum()))
         feat_df['spread'] = feat_df['spread'].fillna(0.0).astype(np.float32)
 
         if self.cutoff_time is not None:
@@ -154,13 +137,50 @@ class DatasetCreator:
             new_end_time = (datetime.combine(datetime.today(), Constants.Data.REGULAR_TRADING_HOURS_END) - timedelta(minutes=self.target.horizon)).time()
             feat_df = feat_df[feat_df['date'].dt.time <= new_end_time]
 
-        num_null_rows = feat_df.isnull().any(axis=1).sum()
+        num_null_rows = int(feat_df.isnull().any(axis=1).sum())
         if num_null_rows:
-            logging.info(f"Imputing {num_null_rows} NaN rows with 0.5 sentinel value")
+            logging.info("Imputing %d NaN rows with 0.5 sentinel value", num_null_rows)
         feat_df[feature_cols] = feat_df[feature_cols].fillna(0.5)
         assert feat_df.isna().sum().sum() == 0, "There are still NaNs in the dataset"
 
         return feat_df.reset_index(drop=True)
+
+    def _filter_and_align_assets(self, processed_assets: dict[str, pd.DataFrame], date_column: str = 'date') -> dict[str, pd.DataFrame]:
+        # 1) Drop assets that are shorter than 99% of the longest
+        lengths = {a: len(df) for a, df in processed_assets.items()}
+        max_len = max(lengths.values()) if lengths else 0
+        threshold = int(0.99 * max_len)
+
+        filtered_assets: dict[str, pd.DataFrame] = {
+            a: df for a, df in processed_assets.items() if len(df) >= threshold
+        }
+        dropped_by_length = [a for a, df in processed_assets.items() if len(df) < threshold]
+
+        # 2) Intersect dates across remaining assets and trim each to the intersection
+        common_dates: set[pd.Timestamp] | None = None
+        for df in filtered_assets.values():
+            dates_set = set(pd.to_datetime(df[date_column]))
+            common_dates = dates_set if common_dates is None else (common_dates & dates_set)
+
+        aligned_assets: dict[str, pd.DataFrame] = {}
+        for a, df in filtered_assets.items():
+            aligned_df = df[df[date_column].isin(common_dates)].sort_values(by=date_column).reset_index(drop=True)
+            aligned_assets[a] = aligned_df
+
+        # Sanity: ensure equal lengths and alignment
+        final_lengths = {a: len(df) for a, df in aligned_assets.items()}
+        assert len(set(final_lengths.values())) == 1, "Aligned assets must have identical lengths"
+
+        aligned_rows = next(iter(final_lengths.values())) if final_lengths else 0
+        logging.info(
+            "Finished feature generation. Dropped %d assets by length threshold. Kept %d assets with %d aligned rows each. Max features len prior to alignment: %d",
+            len(dropped_by_length),
+            len(aligned_assets),
+            aligned_rows,
+            max_len,
+        )
+
+        return aligned_assets
 
     def _train_test_split(self, full_dict: dict[str, pd.DataFrame]):
         """Split each asset DataFrame into train and test parts."""

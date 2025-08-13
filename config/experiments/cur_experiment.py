@@ -23,9 +23,9 @@ from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 frequency = TimeFrame.Hour
 
 data_config = DataConfig(
-    symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
+    symbol_or_symbols=Constants.Data.DJIA,
     frequency=frequency,
-    start=datetime(2022, 1, 1, tzinfo=timezone.utc),
+    start=datetime(2016, 1, 1, tzinfo=timezone.utc),
     end=datetime(2025, 1, 1, tzinfo=timezone.utc),
 
     features={

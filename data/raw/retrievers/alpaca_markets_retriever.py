@@ -36,9 +36,9 @@ def _download_file_from_gdrive(file_id: str, output_dir: str, file_name: str):
 
 def _download_from_gdrive():
     _download_file_from_gdrive(
-        file_id= "1ofgmKnmpe-sxbyHCcm_Vg8J6tQ9ynWnv",
+        file_id= "1I-3Jy4nFioOUEbILtLbtkY4fMP5PcOC3",
         output_dir='../data/raw/alpaca/bars_with_quotes',
-        file_name="1Hour_2022-01-01-2025-01-01_AAPL+AMD+BABA+BITU+C+CSCO+DAL+DIA+GLD+GOOG+IJR+MARA+MRVL+MU+NEE+NKE+NVDA+ON+PLTR+PYPL+QLD+QQQ+QQQM+R.pkl"
+        file_name="1Hour_2016-01-01-2025-01-01_MMM+AXP+AMGN+AMZN+AAPL+BA+CAT+CVX+CSCO+KO+DIS+GS+HD+HON+IBM+JNJ+JPM+MCD+MRK+MSFT+NKE+NVDA+PG+CRM+SHW.pkl"
     )
     # _download_file_from_gdrive(
     #     file_id= "1oE69lvgomUzIqJHCOJ4N1g6opWuv1coW",
