@@ -5,7 +5,7 @@ sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 from datetime import datetime, timezone, time
 import torch
 import numpy as np
-from alpaca.data.timeframe import TimeFrame
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
 from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig, ObservabilityConfig
 from config.constants import Constants
@@ -20,7 +20,7 @@ from modeling.models.tcn import TCN
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
 
-frequency = TimeFrame.Hour
+frequency = TimeFrame(amount=15, unit=TimeFrameUnit.Minute)
 
 data_config = DataConfig(
     symbol_or_symbols=Constants.Data.DJIA,
@@ -62,7 +62,7 @@ data_config = DataConfig(
     },
     target=FutureMeanReturnClassification(base_feature='close', horizon=1),
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
-    missing_values_handler=ForwardFillFlatBars(frequency='min' if str(frequency) == '1Min' else ('h' if str(frequency) == '1Hour' else 'unknown')),
+    missing_values_handler=ForwardFillFlatBars(frequency=str(frequency)),
     train_set_last_date=datetime(2024, 1, 1, tzinfo=timezone.utc), 
     in_seq_len=60,
     multi_asset_prediction=True,

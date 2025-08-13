@@ -1,6 +1,5 @@
 import pandas as pd
 import logging
-from datetime import timedelta
 
 
 class DummyMissingValuesHandler:
@@ -33,7 +32,7 @@ class ForwardFillFlatBars:
 
         missing = data_filled['volume'].isna()
 
-        logging.info(f"Imputing {missing.sum()} NaN rows out of {len(data_filled)} with forward fill..")
+        logging.info("Imputing %d NaN rows out of %d with forward fill..", missing.sum(), len(data_filled))
 
         data_filled.loc[missing, 'open'] = data_filled.loc[missing, 'close']
         data_filled.loc[missing, 'high'] = data_filled.loc[missing, 'close']
@@ -63,9 +62,18 @@ class ForwardFillFlatBars:
 
     def fill_day(self, day_slice):
         day = day_slice.index[0].normalize()  # midnight of that day
-        full_idx = pd.date_range(
-            start=day + pd.Timedelta(hours=13, minutes=30) if self.frequency == 'min' else day + pd.Timedelta(hours=14),
-            end=  day + pd.Timedelta(hours=20,     minutes=0),
-            freq=self.frequency
-        )
+
+        start = day + pd.Timedelta(hours=13, minutes=30)  # 13:30..20:00 (minute grid)
+        end = day + pd.Timedelta(hours=20, minutes=0)
+        if self.frequency == '1Min':
+            freq = 'min'
+        elif self.frequency in ('5Min', '15Min'):
+            freq = self.frequency.lower()
+        elif self.frequency == '1Hour':
+            start = day + pd.Timedelta(hours=14)
+            freq = 'h'
+        else:
+            raise ValueError(f"Unsupported frequency: {self.frequency}")
+
+        full_idx = pd.date_range(start=start, end=end, freq=freq)
         return day_slice.reindex(full_idx)
