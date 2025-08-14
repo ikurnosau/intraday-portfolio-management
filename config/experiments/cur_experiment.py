@@ -20,10 +20,10 @@ from modeling.models.tcn import TCN
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
 
-frequency = TimeFrame(amount=15, unit=TimeFrameUnit.Minute)
+frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Hour)
 
 data_config = DataConfig(
-    symbol_or_symbols=Constants.Data.DJIA,
+    symbol_or_symbols=Constants.Data.MOST_LIQUID_TECH_STOCKS,
     frequency=frequency,
     start=datetime(2016, 1, 1, tzinfo=timezone.utc),
     end=datetime(2025, 1, 1, tzinfo=timezone.utc),

@@ -99,6 +99,12 @@ def DDR(returns: Sequence[float | int]) -> float:
 DEFAULT_METRICS: Dict[str, Callable[[Sequence[float]], float]] = {
     "CumulativeReturn": cumulative_return,
     "MeanReturnPercentage": mean_return_percentage,
+    "ARR": APR,
+    "AVOL": AVOL,
+    "MDD": MDD,
+    "ASR": ASR,
+    "CR": CR,
+    "DDR": DDR,
 }
 
 
