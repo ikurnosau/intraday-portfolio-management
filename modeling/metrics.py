@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 
 
 def rmse_regression(outputs: torch.Tensor, targets: torch.Tensor) -> float:
@@ -52,4 +53,20 @@ def rmse_multi_asset_classification(outputs: torch.Tensor, targets: torch.Tensor
     preds = outputs.argmax(dim=-1).to(torch.float32)
     targ = targets.to(torch.float32)
     return torch.sqrt(torch.mean((preds - targ) ** 2))
+
+
+def coral_pred_class(outputs: torch.Tensor) -> torch.Tensor:
+    # outputs: (B, A, K-1) threshold logits
+    probs_ge = torch.sigmoid(outputs)          # P(y > k)
+    return (probs_ge > 0.5).sum(dim=-1)        # (B, A) in {0..K-1}
+
+def accuracy_multi_asset_coral(outputs: torch.Tensor, targets: torch.Tensor) -> float:
+    preds = coral_pred_class(outputs)
+    correct = preds.eq(targets).sum().item()
+    return correct / targets.numel()
+
+def rmse_multi_asset_coral(outputs: torch.Tensor, targets: torch.Tensor) -> float:
+    preds = coral_pred_class(outputs).to(torch.float32)
+    targ = targets.to(torch.float32)
+    return torch.sqrt(torch.mean((preds - targ) ** 2)).item()
 

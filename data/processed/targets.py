@@ -114,10 +114,9 @@ class Balanced5ClassClassification:
     and test data.
     """
 
-    _class_values = np.array([0.0, 0.25, 0.5, 0.75, 1.0], dtype=np.float32)
-
-    def __init__(self, horizon=5, base_feature: str = "close"):
+    def __init__(self, horizon=5, class_values: list[float] = [0.0, 0.25, 0.5, 0.75, 1.0], base_feature: str = "close"):
         self.horizon = horizon
+        self.class_values = class_values
         self.base_feature = base_feature
         # Quantile thresholds initialised to None until `fit` is called
         self.q20: float | None = None
@@ -152,15 +151,15 @@ class Balanced5ClassClassification:
 
         def encode(r: float | np.float64):
             if r < self.q20:
-                return self._class_values[0]
+                return self.class_values[0]
             elif r < self.q40:
-                return self._class_values[1]
+                return self.class_values[1]
             elif r < self.q60:
-                return self._class_values[2]
+                return self.class_values[2]
             elif r < self.q80:
-                return self._class_values[3]
+                return self.class_values[3]
             else:
-                return self._class_values[4]
+                return self.class_values[4]
 
         target = returns.apply(encode).astype(np.float32)
         return target

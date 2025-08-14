@@ -17,7 +17,8 @@ from modeling.models.tsa_classifier import TemporalSpatial
 from modeling.models.lstm import LSTMClassifier
 from modeling.models.mlp import MLP
 from modeling.models.tcn import TCN
-from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
+from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression, accuracy_multi_asset_coral, rmse_multi_asset_coral
+from modeling.loss import coral_loss
 
 
 frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Hour)
@@ -60,7 +61,7 @@ data_config = DataConfig(
                              .rolling(10).std()
                              / (df['close'].pct_change().rolling(20).std() + 1e-8)
     },
-    target=FutureMeanReturnClassification(base_feature='close', horizon=1),
+    target=FutureMeanReturnClassification(base_feature='close', horizon=1, class_values=[0.0, 1.0, 2.0, 3.0, 4.0]),
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
     missing_values_handler=ForwardFillFlatBars(frequency=str(frequency)),
     train_set_last_date=datetime(2024, 1, 1, tzinfo=timezone.utc), 
@@ -74,7 +75,7 @@ data_config = DataConfig(
 model_config = ModelConfig(
     model=TemporalSpatial(
         input_dim=len(data_config.features),
-        output_dim=1,  # regression
+        output_dim=4,  # classification
         hidden_dim=128,
         lstm_layers=2,
         bidirectional=True,
@@ -104,7 +105,7 @@ cur_optimizer = torch.optim.AdamW(
 )
 
 train_config = TrainConfig(
-    loss_fn=torch.nn.MSELoss(),
+    loss_fn=coral_loss,
     optimizer=cur_optimizer,
     scheduler={
         "type": "OneCycleLR",
@@ -115,7 +116,7 @@ train_config = TrainConfig(
         "anneal_strategy": "cos",
         "cycle_momentum": False,
     },
-    metrics={"rmse": rmse_regression},
+    metrics={"rmse": rmse_multi_asset_coral, 'accuracy': accuracy_multi_asset_coral},
     num_epochs=20,
     early_stopping_patience=5,
 
