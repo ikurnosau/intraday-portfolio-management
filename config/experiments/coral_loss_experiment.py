@@ -24,7 +24,7 @@ from modeling.loss import coral_loss
 frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Hour)
 
 data_config = DataConfig(
-    symbol_or_symbols=Constants.Data.DJIA,
+    symbol_or_symbols=Constants.Data.MOST_LIQUID_TECH_STOCKS,
     frequency=frequency,
     start=datetime(2016, 1, 1, tzinfo=timezone.utc),
     end=datetime(2025, 1, 1, tzinfo=timezone.utc),
@@ -61,11 +61,11 @@ data_config = DataConfig(
                              .rolling(10).std()
                              / (df['close'].pct_change().rolling(20).std() + 1e-8)
     },
-    target=FutureMeanReturnClassification(base_feature='close', horizon=1, class_values=[0.0, 0.25, 0.5, 0.75, 1.0]),
+    target=FutureMeanReturnClassification(base_feature='close', horizon=1, class_values=[0.0, 1.0, 2.0, 3.0, 4.0]),
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
     missing_values_handler=ForwardFillFlatBars(frequency=str(frequency)),
     train_set_last_date=datetime(2024, 1, 1, tzinfo=timezone.utc), 
-    in_seq_len=60,
+    in_seq_len=24,
     multi_asset_prediction=True,
 
     cutoff_time=time(hour=13, minute=59),
@@ -75,7 +75,7 @@ data_config = DataConfig(
 model_config = ModelConfig(
     model=TemporalSpatial(
         input_dim=len(data_config.features),
-        output_dim=1,  # classification
+        output_dim=4,  # classification
         hidden_dim=64,
         lstm_layers=1,
         bidirectional=True,
@@ -105,7 +105,7 @@ cur_optimizer = torch.optim.AdamW(
 )
 
 train_config = TrainConfig(
-    loss_fn=torch.nn.MSELoss(),
+    loss_fn=coral_loss,
     optimizer=cur_optimizer,
     scheduler={
         "type": "OneCycleLR",
@@ -116,7 +116,7 @@ train_config = TrainConfig(
         "anneal_strategy": "cos",
         "cycle_momentum": False,
     },
-    metrics={"rmse": rmse_regression},
+    metrics={"rmse": rmse_multi_asset_coral, 'accuracy': accuracy_multi_asset_coral},
     num_epochs=20,
     early_stopping_patience=5,
 
