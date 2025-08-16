@@ -17,6 +17,7 @@ from modeling.models.tsa_classifier import TemporalSpatial
 from modeling.models.lstm import LSTMClassifier
 from modeling.models.mlp import MLP
 from modeling.models.tcn import TCN
+from modeling.models.asu import ASU
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression, accuracy_multi_asset_coral, rmse_multi_asset_coral
 from modeling.loss import coral_loss
 
@@ -65,7 +66,7 @@ data_config = DataConfig(
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
     missing_values_handler=ForwardFillFlatBars(frequency=str(frequency)),
     train_set_last_date=datetime(2024, 1, 1, tzinfo=timezone.utc), 
-    in_seq_len=180,
+    in_seq_len=13,
     multi_asset_prediction=True,
 
     cutoff_time=time(hour=13, minute=59),
@@ -73,18 +74,29 @@ data_config = DataConfig(
 
 
 model_config = ModelConfig(
-    model=TemporalSpatial(
-        input_dim=len(data_config.features),
-        output_dim=1,  # classification
-        hidden_dim=256,
-        lstm_layers=3,
-        bidirectional=True,
+    model = ASU(
+        num_nodes=len(data_config.symbol_or_symbols),
+        in_features=len(data_config.features),
+        hidden_dim=128,
+        window_len=-1,
         dropout=0.2,
-        num_heads=4,
-        use_spatial_attention=True,
-        num_assets=len(data_config.symbol_or_symbols),
-        asset_embed_dim=16,
+        kernel_size=2,
+        layers=4,
+        spatial_bool=True,       # default (not disabled on the cmd-line)
+        addaptiveadj=True,
     ),
+    # model=TemporalSpatial(
+    #     input_dim=len(data_config.features),
+    #     output_dim=1,  # classification
+    #     hidden_dim=256,
+    #     lstm_layers=3,
+    #     bidirectional=True,
+    #     dropout=0.2,
+    #     num_heads=4,
+    #     use_spatial_attention=True,
+    #     num_assets=len(data_config.symbol_or_symbols),
+    #     asset_embed_dim=16,
+    # ),
     # model=TCN(
     #     in_channels=len(data_config.features),
     #     hidden_channels=128,
@@ -109,16 +121,16 @@ train_config = TrainConfig(
     optimizer=cur_optimizer,
     scheduler={
         "type": "OneCycleLR",
-        "max_lr": 1e-3,        # peak learning rate
-        "pct_start": 0.2,       # 20 % warm-up
+        "max_lr": 3e-4,        # peak learning rate
+        "pct_start": 0.1,       # 10 % warm-up
         "div_factor": 25,       # initial LR = max_lr / 25
-        "final_div_factor": 1e4, # final LR = max_lr / 1000
+        "final_div_factor": 1e3,# final LR = max_lr / 1000
         "anneal_strategy": "cos",
         "cycle_momentum": False,
     },
     metrics={"rmse": rmse_regression},
     num_epochs=20,
-    early_stopping_patience=20,
+    early_stopping_patience=5,
 
     device=torch.device("cuda"),
     cudnn_benchmark=True,
