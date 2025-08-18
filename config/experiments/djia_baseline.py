@@ -21,13 +21,13 @@ from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression, ac
 from modeling.loss import coral_loss
 
 
-frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Day)
+frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Hour)
 
 data_config = DataConfig(
-    symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
+    symbol_or_symbols=Constants.Data.DJIA,
     frequency=frequency,
-    start=datetime(2024, 6, 1, tzinfo=timezone.utc),
-    end=datetime(2025, 6, 1, tzinfo=timezone.utc),
+    start=datetime(2016, 1, 1, tzinfo=timezone.utc),
+    end=datetime(2025, 1, 1, tzinfo=timezone.utc),
 
     features={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------
@@ -61,11 +61,11 @@ data_config = DataConfig(
                              .rolling(10).std()
                              / (df['close'].pct_change().rolling(20).std() + 1e-8)
     },
-    target=FutureHorizonReturnClassification(base_feature='close', horizon=10, class_values=[0.0, 0.25, 0.5, 0.75, 1.0]),
+    target=FutureMeanReturnClassification(base_feature='close', horizon=35, class_values=[0.0, 0.25, 0.5, 0.75, 1.0]),
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
-    missing_values_handler=DummyMissingValuesHandler(),
-    train_set_last_date=datetime(2009, 9, 1, tzinfo=timezone.utc), 
-    in_seq_len=60,
+    missing_values_handler=ForwardFillFlatBars(frequency=str(frequency)),
+    train_set_last_date=datetime(2024, 1, 1, tzinfo=timezone.utc), 
+    in_seq_len=180,
     multi_asset_prediction=True,
 
     cutoff_time=time(hour=13, minute=59),
@@ -76,14 +76,14 @@ model_config = ModelConfig(
     model=TemporalSpatial(
         input_dim=len(data_config.features),
         output_dim=1,  # classification
-        hidden_dim=128,
-        lstm_layers=2,
+        hidden_dim=256,
+        lstm_layers=3,
         bidirectional=True,
         dropout=0.2,
         num_heads=4,
-        use_spatial_attention=True,
-        num_assets=len(data_config.symbol_or_symbols) - 3,
-        asset_embed_dim=16,
+        use_spatial_attention=False,
+        num_assets=len(data_config.symbol_or_symbols),
+        asset_embed_dim=0,
     ),
     # model=TCN(
     #     in_channels=len(data_config.features),
@@ -123,7 +123,7 @@ train_config = TrainConfig(
     device=torch.device("cuda"),
     cudnn_benchmark=True,
 
-    batch_size=64,
+    batch_size=128,
     shuffle=True,
     num_workers=8,
     prefetch_factor=4,

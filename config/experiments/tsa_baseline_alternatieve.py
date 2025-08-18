@@ -5,23 +5,29 @@ sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 from datetime import datetime, timezone, time
 import torch
 import numpy as np
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
 from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig, ObservabilityConfig
 from config.constants import Constants
 from data.processed.indicators import *
-from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification
+from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification, FutureMeanReturnClassification
 from data.processed.normalization import MinMaxNormalizer, ZScoreOverWindowNormalizer, MinMaxNormalizerOverWindow
 from data.processed.missing_values_handling import ForwardFillFlatBars, DummyMissingValuesHandler
 from modeling.models.tsa_classifier import TemporalSpatial
 from modeling.models.lstm import LSTMClassifier
 from modeling.models.mlp import MLP
 from modeling.models.tcn import TCN
-from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
+from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression, accuracy_multi_asset_coral, rmse_multi_asset_coral
+from modeling.loss import coral_loss
+
+
+frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Minute)
 
 data_config = DataConfig(
-    symbol_or_symbols=Constants.Data.DJIA,
-    start=datetime(2016, 1, 1, tzinfo=timezone.utc),
-    end=datetime(2018, 1, 1, tzinfo=timezone.utc),
+    symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
+    frequency=frequency,
+    start=datetime(2024, 6, 1, tzinfo=timezone.utc),
+    end=datetime(2025, 6, 1, tzinfo=timezone.utc),
 
     features={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------
@@ -55,30 +61,29 @@ data_config = DataConfig(
                              .rolling(10).std()
                              / (df['close'].pct_change().rolling(20).std() + 1e-8)
     },
-    target=Balanced5ClassClassification(base_feature='close', horizon=1),
+    target=FutureMeanReturnClassification(base_feature='close', horizon=1, class_values=[0.0, 0.25, 0.5, 0.75, 1.0]),
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
-    missing_values_handler=ForwardFillFlatBars(),
-    train_set_last_date=datetime(2017, 1, 1, tzinfo=timezone.utc), 
-    in_seq_len=120,
+    missing_values_handler=ForwardFillFlatBars(frequency=str(frequency)),
+    train_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc), 
+    in_seq_len=180,
     multi_asset_prediction=True,
 
-    cutoff_time=time(hour=14, minute=10),
+    cutoff_time=time(hour=13, minute=59),
 )
 
 
 model_config = ModelConfig(
     model=TemporalSpatial(
         input_dim=len(data_config.features),
-        output_dim=1,  # regression
+        output_dim=1,  # classification
         hidden_dim=256,
-        lstm_layers=4,
+        lstm_layers=3,
         bidirectional=True,
         dropout=0.2,
         num_heads=4,
         use_spatial_attention=True,
         num_assets=len(data_config.symbol_or_symbols),
-        asset_embed_dim=32,
-        pre_embedding_dim=None,
+        asset_embed_dim=16,
     ),
     # model=TCN(
     #     in_channels=len(data_config.features),
@@ -104,15 +109,16 @@ train_config = TrainConfig(
     optimizer=cur_optimizer,
     scheduler={
         "type": "OneCycleLR",
-        "max_lr": 3e-3,        # peak learning rate
-        "pct_start": 0.1,       # 10 % warm-up
+        "max_lr": 1e-3,        # peak learning rate
+        "pct_start": 0.2,       # 20 % warm-up
         "div_factor": 25,       # initial LR = max_lr / 25
-        "final_div_factor": 1e3,# final LR = max_lr / 1000
+        "final_div_factor": 1e4, # final LR = max_lr / 1000
         "anneal_strategy": "cos",
         "cycle_momentum": False,
     },
     metrics={"rmse": rmse_regression},
     num_epochs=20,
+    early_stopping_patience=20,
 
     device=torch.device("cuda"),
     cudnn_benchmark=True,

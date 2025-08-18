@@ -72,6 +72,9 @@ class ForwardFillFlatBars:
         elif self.frequency == '1Hour':
             start = day + pd.Timedelta(hours=14)
             freq = 'h'
+        elif self.frequency == '1Day':
+            start = day + pd.Timedelta(hours=14)
+            freq = 'd'
         else:
             raise ValueError(f"Unsupported frequency: {self.frequency}")
 
