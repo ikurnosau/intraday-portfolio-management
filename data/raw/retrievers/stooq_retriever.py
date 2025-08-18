@@ -17,6 +17,7 @@ import numpy as np
 
 from config.constants import Constants
 
+
 def _download_folder_from_gdrive(folder_id: str, output_dir: str, folder_name: str):
     url = f"https://drive.google.com/drive/folders/{folder_id}?usp=sharing"
     logging.info(f"Downloading folder {folder_name} from {url} to {output_dir}")
@@ -31,8 +32,7 @@ def _download_from_gdrive():
         output_dir='../data/raw/stooq/bars',
         folder_name="djia"
     )
-
-
+    
 class StooqRetriever:
     ROOT_DIR = '../data/raw/stooq/bars/djia'
 
@@ -50,7 +50,7 @@ class StooqRetriever:
             df['date'] = pd.to_datetime(df['date'], utc=True)
             df['date'] = df['date'].apply(lambda x: x.replace(hour=17, minute=0, second=0, microsecond=0))
             if df['date'].min() <= start:
-                asset_dfs[name.split('_')[0].upper()] = df[df['date'] >= start][df['date'] <= end]
+                asset_dfs[name.split('_')[0].upper()] = df.loc[(df['date'] >= start) & (df['date'] <= end)]
             else:
                 logging.info(f'{name} has no data prior to 1999-06-01')
         return asset_dfs
