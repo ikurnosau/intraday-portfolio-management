@@ -17,9 +17,28 @@ import numpy as np
 
 from config.constants import Constants
 
+def _download_folder_from_gdrive(folder_id: str, output_dir: str, folder_name: str):
+    url = f"https://drive.google.com/drive/folders/{folder_id}?usp=sharing"
+    logging.info(f"Downloading folder {folder_name} from {url} to {output_dir}")
+    output_path = os.path.join(output_dir, folder_name)
+    os.makedirs(output_dir, exist_ok=True)
+    gdown.download_folder(url=url, output=output_path, quiet=False)
+
+
+def _download_from_gdrive():
+    _download_folder_from_gdrive(
+        folder_id= "14cvQhyjltHfxa_-rVrGi67QfrsYtWqHh",
+        output_dir='../data/raw/stooq/bars',
+        folder_name="djia"
+    )
+
 
 class StooqRetriever:
     ROOT_DIR = '../data/raw/stooq/bars/djia'
+
+    def __init__(self, download_from_gdrive: bool=False):
+        if download_from_gdrive:
+            _download_from_gdrive()
     
     def bars(self,
              start: datetime=datetime(1999, 6, 1, tzinfo=timezone.utc),
