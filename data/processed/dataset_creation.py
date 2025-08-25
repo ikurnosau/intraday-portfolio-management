@@ -183,15 +183,37 @@ class DatasetCreator:
         return aligned_assets
 
     def _train_test_split(self, full_dict: dict[str, pd.DataFrame]):
-        """Split each asset DataFrame into train and test parts."""
-        train_dict = {
-            asset: df[df['date'] <= self.train_last_date]
-            for asset, df in full_dict.items()
-        }
-        test_dict = {
-            asset: df[df['date'] > self.train_last_date]
-            for asset, df in full_dict.items()
-        }
+        """Split each asset DataFrame into train and (optionally) test parts.
+
+        The traditional split at ``self.train_last_date`` causes the very first
+        sample of the *test* set to miss the preceding ``in_seq_len−1`` context
+        when later converted into sliding windows. To avoid this, we now
+        *extend* the test slice backwards by ``in_seq_len−1`` rows (or to the
+        beginning of the DataFrame if there are fewer rows available).
+        The train slice remains unchanged which means those overlap rows are
+        present in **both** splits – this is intentional and does not affect
+        typical ML workflows because the test windows will still start *after*
+        ``self.train_last_date``.
+        """
+
+        train_dict: dict[str, pd.DataFrame] = {}
+        test_dict: dict[str, pd.DataFrame] = {}
+
+        extra_rows = max(self.in_seq_len - 1, 0)
+
+        for asset, df in full_dict.items():
+            # Train part – all rows up to and including the cut-off date
+            train_mask = df['date'] <= self.train_last_date
+            train_dict[asset] = df[train_mask]
+
+            # Test part – rows strictly after the cut-off date **plus** the
+            # preceding ``extra_rows`` observations to preserve context.
+            test_start_indices = df.index[df['date'] > self.train_last_date]
+
+            first_test_idx = test_start_indices[0]
+            context_start_idx = max(first_test_idx - extra_rows, 0)
+            test_dict[asset] = df.iloc[context_start_idx:]
+
         return train_dict, test_dict
 
     def _to_numpy_and_stack(
