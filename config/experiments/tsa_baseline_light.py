@@ -25,8 +25,8 @@ frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Minute)
 data_config = DataConfig(
     symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
     frequency=frequency,
-    start=datetime(2024, 6, 1),
-    end=datetime(2025, 6, 1),
+    start=datetime(2024, 6, 1, tzinfo=timezone.utc),
+    end=datetime(2025, 6, 1, tzinfo=timezone.utc),
 
     features={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------
