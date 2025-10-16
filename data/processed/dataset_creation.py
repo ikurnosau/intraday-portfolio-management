@@ -22,18 +22,18 @@ class DatasetCreator:
                  missing_values_handler: Callable,
                  in_seq_len: int,
                  train_set_last_date: datetime | None,
+                 val_set_last_date: datetime,
                  multi_asset_prediction: bool,
-                 cutoff_time: datetime_lib.time | None = datetime_lib.time(hour=14, minute=10), 
-                 include_test_data: bool = True):
+                 cutoff_time: datetime_lib.time | None = datetime_lib.time(hour=14, minute=10)):
         self.features = features
         self.target = target
         self.normalizer = normalizer
         self.missing_values_handler = missing_values_handler
         self.in_seq_len = in_seq_len
         self.train_last_date = train_set_last_date
+        self.val_last_date = val_set_last_date
         self.multi_asset_prediction = multi_asset_prediction
         self.cutoff_time = cutoff_time
-        self.include_test_data = include_test_data
 
     def create_dataset_numpy(self, 
                              data: dict[str, pd.DataFrame],
@@ -49,11 +49,9 @@ class DatasetCreator:
                                   np.ndarray,
                                   np.ndarray,
                              ]:
-        """High-level orchestrator that transforms raw per-asset OHLCV data into
+        """
+        High-level orchestrator that transforms raw per-asset OHLCV data into
         numpy arrays suitable for model consumption.
-
-        The method now delegates to a set of small private helpers so that each
-        step can be unit-tested independently.
         """
 
         processed_assets: dict[str, pd.DataFrame] = {}
@@ -64,11 +62,13 @@ class DatasetCreator:
 
         processed_assets = self._filter_and_align_assets(processed_assets, date_column=date_column)
 
-        train_dict, test_dict = self._train_test_split(processed_assets)
+        # Perform the 3-way temporal split
+        train_dict, val_dict, test_dict = self._train_val_test_split(processed_assets)
 
+        # Convert each split into the final numpy representation
         X_train, y_train, next_return_train, spread_train, volatility_train = self._to_numpy_and_stack(train_dict)
-        X_test, y_test, next_return_test, spread_test, volatility_test = self._to_numpy_and_stack(test_dict) \
-            if self.include_test_data else (None, None, None, None, None)
+        X_val, y_val, next_return_val, spread_val, volatility_val = self._to_numpy_and_stack(val_dict)
+        X_test, y_test, next_return_test, spread_test, volatility_test = self._to_numpy_and_stack(test_dict)
 
         return (
             X_train,
@@ -76,6 +76,11 @@ class DatasetCreator:
             next_return_train,
             spread_train,
             volatility_train,
+            X_val,
+            y_val,
+            next_return_val,
+            spread_val,
+            volatility_val,
             X_test,
             y_test,
             next_return_test,
@@ -182,56 +187,49 @@ class DatasetCreator:
 
         return aligned_assets
 
-    def _train_test_split(self, full_dict: dict[str, pd.DataFrame]):
-        """Split each asset DataFrame into train and (optionally) test parts.
-
-        The traditional split at ``self.train_last_date`` causes the very first
-        sample of the *test* set to miss the preceding ``in_seq_len−1`` context
-        when later converted into sliding windows. To avoid this, we now
-        *extend* the test slice backwards by ``in_seq_len−1`` rows (or to the
-        beginning of the DataFrame if there are fewer rows available).
-        The train slice remains unchanged which means those overlap rows are
-        present in **both** splits – this is intentional and does not affect
-        typical ML workflows because the test windows will still start *after*
-        ``self.train_last_date``.
-        """
-
+    def _train_val_test_split(self, full_dict: dict[str, pd.DataFrame]):
         train_dict: dict[str, pd.DataFrame] = {}
+        val_dict: dict[str, pd.DataFrame] = {}
         test_dict: dict[str, pd.DataFrame] = {}
 
         extra_rows = max(self.in_seq_len - 1, 0)
 
         for asset, df in full_dict.items():
-            # Train part – all rows up to and including the cut-off date
+            # ---------------------------
+            # Train slice (≤ train_last_date)
+            # ---------------------------
             train_mask = df['date'] <= self.train_last_date
             train_dict[asset] = df[train_mask]
 
-            # Test part – rows strictly after the cut-off date **plus** the
-            # preceding ``extra_rows`` observations to preserve context.
-            test_start_indices = df.index[df['date'] > self.train_last_date]
+            # ---------------------------
+            # Validation slice (train_last_date < d ≤ val_last_date)
+            # + context rows
+            # ---------------------------
+            val_mask = (df['date'] > self.train_last_date) & (df['date'] <= self.val_last_date)
 
-            first_test_idx = test_start_indices[0]
-            context_start_idx = max(first_test_idx - extra_rows, 0)
-            test_dict[asset] = df.iloc[context_start_idx:]
 
-        return train_dict, test_dict
+            first_val_idx = val_mask.idxmax()  # first True index
+            context_start_idx = max(first_val_idx - extra_rows, 0)
+
+            last_val_idx = val_mask[::-1].idxmax()  # last True index
+            # ``iloc`` is [start:stop) so add 1 to include last_val_idx
+            val_dict[asset] = df.iloc[context_start_idx : last_val_idx + 1]
+
+
+            # ---------------------------
+            # Test slice (d > val_last_date) + context rows
+            # ---------------------------
+            test_mask = df['date'] > self.val_last_date
+            first_test_idx = test_mask.idxmax()
+            context_start_idx_test = max(first_test_idx - extra_rows, 0)
+            test_dict[asset] = df.iloc[context_start_idx_test:]
+
+        return train_dict, val_dict, test_dict
 
     def _to_numpy_and_stack(
         self,
         per_asset_df: dict[str, pd.DataFrame],
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Convert a per-asset DataFrame dictionary into stacked (X, y, next_ret, spread, volatility) numpy arrays.
-
-        This consolidates all logic that was previously duplicated for the train and test
-        splits inside ``create_dataset_numpy``:
-
-        1. Extract feature matrix, target, next-period return and spreads as *per-asset* numpy arrays.
-        2. Call :py:meth:`_stack` to combine them into either a multi-asset tensor or a flat batch,
-           depending on ``self.multi_asset_prediction``.
-        3. Optionally convert the flat representation into sliding windows when
-           ``self.in_seq_len`` > 1.
-        """
-
         per_asset_X = {
             a: df.drop(["date", "target", "next_return", "spread", "volatility"], axis=1).to_numpy(dtype=np.float32)
             for a, df in per_asset_df.items()

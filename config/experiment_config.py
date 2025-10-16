@@ -10,15 +10,18 @@ from alpaca.data.timeframe import TimeFrame
 class DataConfig: 
     symbol_or_symbols: str | list[str]
     frequency: TimeFrame
+
     start: datetime
     end: datetime
+    train_set_last_date: datetime 
+    val_set_last_date: datetime
 
     features: dict[str, Callable]
     target: Callable
     normalizer: Callable
     missing_values_handler: Callable
     in_seq_len: int
-    train_set_last_date: datetime
+
     multi_asset_prediction: bool
 
     cutoff_time: datetime.time = None  # time-of-day cutoff for features

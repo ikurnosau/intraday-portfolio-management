@@ -25,8 +25,16 @@ frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Minute)
 data_config = DataConfig(
     symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
     frequency=frequency,
+
     start=datetime(2024, 6, 1, tzinfo=timezone.utc),
     end=datetime(2025, 6, 1, tzinfo=timezone.utc),
+    train_set_last_date=datetime(2025, 4, 1, tzinfo=timezone.utc), 
+    val_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
+
+    # start=datetime(2024, 9, 1, tzinfo=timezone.utc),
+    # end=datetime(2025, 10, 1, tzinfo=timezone.utc),
+    # train_set_last_date=datetime(2025, 8, 1, tzinfo=timezone.utc), 
+    # val_set_last_date=datetime(2025, 9, 1, tzinfo=timezone.utc),
 
     features={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------
@@ -63,7 +71,7 @@ data_config = DataConfig(
     target=FutureMeanReturnClassification(base_feature='close', horizon=1),
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
     missing_values_handler=ForwardFillFlatBars(frequency=str(frequency)),
-    train_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc), 
+
     in_seq_len=60,
     multi_asset_prediction=True,
 

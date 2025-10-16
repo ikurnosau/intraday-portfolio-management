@@ -130,9 +130,13 @@ class PolicyGradient:
 
         return self.train_history, self.val_history
 
-    def evaluate(self, actor: BaseActor | None = None) -> tuple[float, List[float]]:
+    def evaluate(self, actor: BaseActor | None = None, eval_loader: torch.utils.data.DataLoader | None = None) -> tuple[float, List[float]]:
         if actor is not None:
             self.agent.actor = actor.to(self.device)
+            
+        if eval_loader is not None:
+            self.val_loader = eval_loader
+
         epoch_loss, realized_returns, actions = self.eval_epoch(-1)
         return epoch_loss, realized_returns, actions
 
