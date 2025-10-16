@@ -8,3 +8,6 @@ data/raw/alpaca/
 data/raw/alpaca/
 data/raw/databento/
 data/raw/stooq/
+ReportRepo/
+data/experiments_results/
+modeling/checkpoints/
