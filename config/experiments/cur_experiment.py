@@ -26,15 +26,15 @@ data_config = DataConfig(
     symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
     frequency=frequency,
 
-    start=datetime(2024, 6, 1, tzinfo=timezone.utc),
-    end=datetime(2025, 6, 1, tzinfo=timezone.utc),
-    train_set_last_date=datetime(2025, 4, 1, tzinfo=timezone.utc), 
-    val_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
+    # start=datetime(2024, 6, 1, tzinfo=timezone.utc),
+    # end=datetime(2025, 6, 1, tzinfo=timezone.utc),
+    # train_set_last_date=datetime(2025, 4, 1, tzinfo=timezone.utc), 
+    # val_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
 
-    # start=datetime(2024, 9, 1, tzinfo=timezone.utc),
-    # end=datetime(2025, 10, 1, tzinfo=timezone.utc),
-    # train_set_last_date=datetime(2025, 8, 1, tzinfo=timezone.utc), 
-    # val_set_last_date=datetime(2025, 9, 1, tzinfo=timezone.utc),
+    start=datetime(2024, 9, 1, tzinfo=timezone.utc),
+    end=datetime(2025, 10, 1, tzinfo=timezone.utc),
+    train_set_last_date=datetime(2025, 7, 1, tzinfo=timezone.utc), 
+    val_set_last_date=datetime(2025, 8, 1, tzinfo=timezone.utc),
 
     features={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------
@@ -125,7 +125,7 @@ train_config = TrainConfig(
     },
     metrics={"rmse": rmse_regression},
     num_epochs=20,
-    early_stopping_patience=5,
+    early_stopping_patience=10,
 
     device=torch.device("cuda"),
     cudnn_benchmark=True,
