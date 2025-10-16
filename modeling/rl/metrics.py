@@ -95,6 +95,30 @@ def DDR(returns: Sequence[float | int]) -> float:
     return APR(returns) / downside_dev
 
 
+# -----------------------------------------------------------------------------
+# Additional risk-adjusted performance metrics
+# -----------------------------------------------------------------------------
+
+
+def SoR(returns: Sequence[float | int]) -> float:
+    """Sortino ratio."""
+
+    r = _to_numpy(returns)
+    if r.size == 0:
+        return float("nan")
+
+    downside = r[r < 0]
+    if downside.size == 0:
+        return float("nan")
+
+    # Population standard deviation of downside returns (ddof=1 for an unbiased estimator)
+    downside_std = downside.std(ddof=1)
+    if downside_std == 0:
+        return float("nan")
+
+    return float(r.mean() / downside_std)
+
+
 # Default metric set expected by the user
 DEFAULT_METRICS: Dict[str, Callable[[Sequence[float]], float]] = {
     "CumulativeReturn": cumulative_return,
@@ -105,6 +129,7 @@ DEFAULT_METRICS: Dict[str, Callable[[Sequence[float]], float]] = {
     "ASR": ASR,
     "CR": CR,
     "DDR": DDR,
+    "SoR": SoR,
 }
 
 
