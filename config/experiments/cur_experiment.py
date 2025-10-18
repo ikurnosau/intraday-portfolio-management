@@ -75,10 +75,11 @@ data_config = DataConfig(
     in_seq_len=60,
     multi_asset_prediction=True,
 
-    cutoff_time=datetime.combine(
+    cutoff_time=(datetime.combine(
         datetime.today(), 
-        Constants.Data.REGULAR_TRADING_HOURS_START + timedelta(minutes=30)\
-    ).time(),
+        Constants.Data.REGULAR_TRADING_HOURS_START
+    ) + timedelta(minutes=30)) \
+        .time(),
 )
 
 
