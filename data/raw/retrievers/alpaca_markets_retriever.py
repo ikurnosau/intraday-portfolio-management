@@ -11,11 +11,12 @@ import pandas as pd
 from dotenv import load_dotenv
 import os
 import pickle 
-import gdown
-import logging
 import numpy as np
 
 from config.constants import Constants
+from data.processed.data_processing_utils import convert_to_eastern
+from data.raw.retrievers.alpaca_markets_utils import _download_from_gdrive
+
 
 class _NumpyCoreRedirectingUnpickler(pickle.Unpickler):
     """Unpickler that maps obsolete ``numpy._core`` → ``numpy.core``."""
@@ -25,36 +26,6 @@ class _NumpyCoreRedirectingUnpickler(pickle.Unpickler):
         if module.startswith("numpy._core"):
             module = module.replace("numpy._core", "numpy.core", 1)
         return super().find_class(module, name)
-
-
-def _download_file_from_gdrive(file_id: str, output_dir: str, file_name: str):
-    url = f'https://drive.google.com/uc?id={file_id}'
-    output_path = os.path.join(output_dir, file_name)
-    os.makedirs(output_dir, exist_ok=True)
-    gdown.download(url, output_path, quiet=False)
-
-
-def _download_from_gdrive():
-    # _download_file_from_gdrive(
-    #     file_id= "1I-3Jy4nFioOUEbILtLbtkY4fMP5PcOC3",
-    #     output_dir='../data/raw/alpaca/bars_with_quotes',
-    #     file_name="1Hour_2016-01-01-2025-01-01_MMM+AXP+AMGN+AMZN+AAPL+BA+CAT+CVX+CSCO+KO+DIS+GS+HD+HON+IBM+JNJ+JPM+MCD+MRK+MSFT+NKE+NVDA+PG+CRM+SHW.pkl"
-    # )
-    # _download_file_from_gdrive(
-    #     file_id= "1oE69lvgomUzIqJHCOJ4N1g6opWuv1coW",
-    #     output_dir='../data/raw/alpaca/bars_with_quotes',
-    #     file_name="1Min_2024-06-01-2025-06-01_AAPL+AMD+BABA+BITU+C+CSCO+DAL+DIA+GLD+GOOG+IJR+MARA+MRVL+MU+NEE+NKE+NVDA+ON+PLTR+PYPL+QLD+QQQ+QQQM+R.pkl"
-    # )
-    # _download_file_from_gdrive(
-    #     file_id= "1fBIwQMGOf-cV5IN-psvWqSV2I3MvPum_",
-    #     output_dir='../modeling/checkpoints',
-    #     file_name="best_model.pth"
-    # )
-    _download_file_from_gdrive(
-        file_id= "1uPa6Szzs9sN3e3PTvPaOeiSCbtfbQ36q",
-        output_dir='../data/raw/alpaca/bars_with_quotes',
-        file_name="1Min_2024-09-01-2025-10-01_AAPL+AMD+BABA+BITU+C+CSCO+DAL+DIA+GLD+GOOG+IJR+MARA+MRVL+MU+NEE+NKE+NVDA+ON+PLTR+PYPL+QLD+QQQ+QQQM+R.pkl"
-    )
     
 
 class AlpacaMarketsRetriever:
@@ -81,11 +52,11 @@ class AlpacaMarketsRetriever:
     
     @staticmethod
     def save_data(payload: object, save_dir: str, file_name: str): 
-            if not os.path.exists(save_dir): 
-                os.makedirs(save_dir)
+        if not os.path.exists(save_dir): 
+            os.makedirs(save_dir)
         
-            with open(os.path.join(save_dir, file_name), 'wb') as output_file: 
-                pickle.dump(payload, output_file)
+        with open(os.path.join(save_dir, file_name), 'wb') as output_file: 
+            pickle.dump(payload, output_file)
 
     @staticmethod
     def load_data(save_dir: str, file_name: str) -> object: 
@@ -119,12 +90,13 @@ class AlpacaMarketsRetriever:
             feed=self.FEED
         )
         bars = self.client.get_stock_bars(request_params).data
-        response = {symbol:
-                    pd.DataFrame([data_item.__dict__
-                                  for data_item in stock_data]) \
-                        .drop(columns=['symbol', 'trade_count', 'vwap']) \
-                        .rename(columns={'timestamp': 'date'})
-                for symbol, stock_data in bars.items()}
+        response = {}
+        for symbol, stock_data in bars.items():
+            df = pd.DataFrame([data_item.__dict__ for data_item in stock_data]) \
+                    .drop(columns=['symbol', 'trade_count', 'vwap']) \
+                    .rename(columns={'timestamp': 'date'})
+            df = convert_to_eastern(df, 'date')
+            response[symbol] = df
         
         if save_dir:
             file_name = self.build_file_name(symbol_or_symbols, start, end)
@@ -143,14 +115,15 @@ class AlpacaMarketsRetriever:
             potential_load_path = os.path.join(save_dir, file_name)
 
             if os.path.exists(potential_load_path): 
-                return self.load_data(save_dir, file_name)
+                data = self.load_data(save_dir, file_name)
+                return {symbol: convert_to_eastern(df, 'date') for symbol, df in data.items()}
             
         return self._bars(symbol_or_symbols, start, end, save_dir)
 
     def _quote_estimation(self, symbol: str, start: datetime, end: datetime) -> dict[str: float]:
-        start = pd.to_datetime(start)
-        start = datetime.combine(start.date(), Constants.Data.REGULAR_TRADING_HOURS_START) + timedelta(hours=2)
-        start = start.replace(tzinfo=timezone.utc)        # re-attach UTC
+        start = pd.to_datetime(start).tz_convert(Constants.Data.EASTERN_TZ)
+        start = datetime.combine(start.date(), Constants.Data.REGULAR_TRADING_HOURS_START)
+        start = start.replace(tzinfo=Constants.Data.EASTERN_TZ) + timedelta(hours=2)
 
         rng = pd.date_range(start=start,
                             end=end,
@@ -206,7 +179,8 @@ class AlpacaMarketsRetriever:
             potential_load_path = os.path.join(save_dir, file_name)
 
             if os.path.exists(potential_load_path): 
-                return self.load_data(save_dir, file_name)
+                data = self.load_data(save_dir, file_name)
+                return {symbol: convert_to_eastern(df, 'date') for symbol, df in data.items()}
             
         return self._bars_with_quotes(symbol_or_symbols, start, end, save_dir)
         
@@ -217,12 +191,15 @@ class AlpacaMarketsRetriever:
             feed=self.FEED
         )
         bars = self.client.get_stock_bars(request_params).data
-        return {symbol:
-                    pd.DataFrame([data_item.__dict__
-                                  for data_item in stock_data]).head(limit)
+        response = {}
+        for symbol, stock_data in bars.items():
+            df = pd.DataFrame([data_item.__dict__ for data_item in stock_data]).head(limit) \
                     .drop(columns=['symbol', 'trade_count']) \
-                        .rename(columns={'timestamp': 'date'})
-                for symbol, stock_data in bars.items()}
+                    .rename(columns={'timestamp': 'date'})
+            # Convert to Eastern Time
+            df = convert_to_eastern(df, 'date')
+            response[symbol] = df
+        return response
 
     def quotes(self,
                symbol_or_symbols,

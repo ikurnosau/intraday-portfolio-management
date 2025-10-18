@@ -24,7 +24,7 @@ class DatasetCreator:
                  train_set_last_date: datetime | None,
                  val_set_last_date: datetime,
                  multi_asset_prediction: bool,
-                 cutoff_time: datetime_lib.time | None = datetime_lib.time(hour=14, minute=10)):
+                 cutoff_time: datetime_lib.time):
         self.features = features
         self.target = target
         self.normalizer = normalizer

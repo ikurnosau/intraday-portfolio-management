@@ -1,6 +1,8 @@
 import pandas as pd
 import logging
 
+from config.constants import Constants
+
 
 class DummyMissingValuesHandler:
     def __call__(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -60,20 +62,27 @@ class ForwardFillFlatBars:
             check_exact=True
         )
 
-    def fill_day(self, day_slice):
+    def fill_day(self, day_slice):        
         day = day_slice.index[0].normalize()  # midnight of that day
 
-        start = day + pd.Timedelta(hours=13, minutes=30)  # 13:30..20:00 (minute grid)
-        end = day + pd.Timedelta(hours=20, minutes=0)
+        # Use constants for regular trading hours
+        trading_start = Constants.Data.REGULAR_TRADING_HOURS_START
+        trading_end = Constants.Data.REGULAR_TRADING_HOURS_END
+        
+        start = day + pd.Timedelta(hours=trading_start.hour, minutes=trading_start.minute)
+        end = day + pd.Timedelta(hours=trading_end.hour, minutes=trading_end.minute)
+        
         if self.frequency == '1Min':
             freq = 'min'
         elif self.frequency in ('5Min', '15Min'):
             freq = self.frequency.lower()
         elif self.frequency == '1Hour':
-            start = day + pd.Timedelta(hours=14)
+            # For hourly frequency, start one hour after market open
+            start = day + pd.Timedelta(hours=trading_start.hour + 1)
             freq = 'h'
         elif self.frequency == '1Day':
-            start = day + pd.Timedelta(hours=14)
+            # For daily frequency, use one specific time during the day
+            start = day + pd.Timedelta(hours=trading_start.hour + 1)
             freq = 'd'
         else:
             raise ValueError(f"Unsupported frequency: {self.frequency}")

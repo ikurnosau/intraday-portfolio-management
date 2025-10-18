@@ -3,7 +3,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
-from datetime import datetime, timezone, time
+from datetime import datetime, timedelta
 import torch
 import numpy as np
 
@@ -31,10 +31,10 @@ data_config = DataConfig(
     # train_set_last_date=datetime(2025, 4, 1, tzinfo=timezone.utc), 
     # val_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
 
-    start=datetime(2024, 9, 1, tzinfo=timezone.utc),
-    end=datetime(2025, 10, 1, tzinfo=timezone.utc),
-    train_set_last_date=datetime(2025, 7, 1, tzinfo=timezone.utc), 
-    val_set_last_date=datetime(2025, 8, 1, tzinfo=timezone.utc),
+    start=datetime(2024, 9, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    end=datetime(2025, 10, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    train_set_last_date=datetime(2025, 7, 1, tzinfo=Constants.Data.EASTERN_TZ), 
+    val_set_last_date=datetime(2025, 8, 1, tzinfo=Constants.Data.EASTERN_TZ),
 
     features={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------
@@ -75,7 +75,10 @@ data_config = DataConfig(
     in_seq_len=60,
     multi_asset_prediction=True,
 
-    cutoff_time=time(hour=14, minute=10),
+    cutoff_time=datetime.combine(
+        datetime.today(), 
+        Constants.Data.REGULAR_TRADING_HOURS_START + timedelta(minutes=30)\
+    ).time(),
 )
 
 

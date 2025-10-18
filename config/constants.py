@@ -1,5 +1,5 @@
 import pandas as pd
-
+from zoneinfo import ZoneInfo
 
 class Constants:
     class Configuration: 
@@ -63,8 +63,10 @@ class Constants:
             "WMT"   # Walmart
         ]
 
-        REGULAR_TRADING_HOURS_START = pd.to_datetime("13:30:00").time()
-        REGULAR_TRADING_HOURS_END = pd.to_datetime("20:00:00").time()
+        EASTERN_TZ = ZoneInfo("America/New_York")
+
+        REGULAR_TRADING_HOURS_START = pd.to_datetime("9:30:00" ).time()
+        REGULAR_TRADING_HOURS_END = pd.to_datetime("16:00:00").time()
         
         class Retrieving: 
             class Alpaca:
