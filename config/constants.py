@@ -67,6 +67,9 @@ class Constants:
 
         REGULAR_TRADING_HOURS_START = pd.to_datetime("9:30:00" ).time()
         REGULAR_TRADING_HOURS_END = pd.to_datetime("16:00:00").time()
+        TRADING_DAY_LENGTH_MINUTES = (REGULAR_TRADING_HOURS_END.hour - REGULAR_TRADING_HOURS_START.hour) * 60 \
+            + (REGULAR_TRADING_HOURS_END.minute - REGULAR_TRADING_HOURS_START.minute) \
+            + 1
         
         class Retrieving: 
             class Alpaca:

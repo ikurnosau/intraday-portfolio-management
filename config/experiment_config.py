@@ -17,6 +17,7 @@ class DataConfig:
     val_set_last_date: datetime
 
     features: dict[str, Callable]
+    statistics: dict[str, Callable]
     target: Callable
     normalizer: Callable
     missing_values_handler: Callable
