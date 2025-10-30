@@ -128,7 +128,7 @@ class AlpacaMarketsRetriever:
         rng = pd.date_range(start=start,
                             end=end,
                             freq="30d",
-                            tz="UTC",          # optional – adds timezone info
+                            tz=Constants.Data.EASTERN_TZ,
                             inclusive="left")
 
         quotes = []

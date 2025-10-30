@@ -3,6 +3,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 
 import pandas as pd
+import copy
 from typing import Callable, Tuple
 from datetime import datetime, timedelta
 import datetime as datetime_lib
@@ -29,9 +30,10 @@ class DataPreparer:
 
     def _generate_raw_features(self, 
                             data: dict[str, pd.DataFrame], 
-                            features: dict[str, Callable]
+                            features: dict[str, Callable],
+                            n_jobs: int=os.cpu_count() // 2
                             ) -> dict[str, pd.DataFrame]:
-        return dict(Parallel(n_jobs=os.cpu_count() // 2, backend="loky")(
+        return dict(Parallel(n_jobs=n_jobs, backend="loky")(
             delayed(self._raw_features_for_df)(asset_name, asset_df, features) \
                 for asset_name, asset_df in data.items())
         )
@@ -51,7 +53,7 @@ class DataPreparer:
         min_asset_length = min(len(df) for df in per_asset_df.values())
         per_asset_dfs_aligned = {asset: df.tail(min_asset_length).reset_index(drop=True) for asset, df in per_asset_df.items()}
 
-        per_asset_array = { a: df.to_numpy(dtype=np.float32) for a, df in per_asset_dfs_aligned.items()}
+        per_asset_array = { a: df.to_numpy(dtype=np.float32).squeeze() for a, df in per_asset_dfs_aligned.items()}
         
         multi_asset_array = np.stack(
             [array for array in per_asset_array.values()], 
@@ -96,11 +98,12 @@ class DataPreparer:
                                       features: dict[str, Callable],
                                       include_target_and_statistics: bool=False,
                                       statistics: dict[str, Callable] | None = None,
-                                      target: Callable | None = None
-                                      ) -> np.ndarray:
+                                      per_asset_target: dict[str, Callable] | None = None,
+                                      n_jobs: int=os.cpu_count() // 2
+                                      ) -> np.ndarray | tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]:
         data_filled = self._fill_missing_values(data)
 
-        raw_features = self._generate_raw_features(data_filled, features=features)
+        raw_features = self._generate_raw_features(data_filled, features=features, n_jobs=n_jobs)
 
         features_normalized = self._normalize_features(
             raw_features,
@@ -112,12 +115,16 @@ class DataPreparer:
         if not include_target_and_statistics:
             return X
         else:
-            target_and_statistics: dict[str, np.ndarray] = {}
-            for statistics_name, statistics_func in (statistics | {"target": target}).items():
-                statistics_features = self._generate_raw_features(data_filled, features={statistics_name: statistics_func})
-                target_and_statistics[statistics_name] = self._features_to_model_input(statistics_features)[-n_timestamps:]
+            target_feature = {asset_name: per_asset_target[asset_name](asset_df_filled) \
+                for asset_name, asset_df_filled in data_filled.items()}
+            y = self._features_to_model_input(target_feature)[-n_timestamps:]
 
-            return X, target_and_statistics['target'], {k: v for k, v in target_and_statistics.items() if k != 'target'} 
+            calculated_statistics: dict[str, np.ndarray] = {}
+            for statistics_name, statistics_func in statistics.items():
+                statistics_features = self._generate_raw_features(data_filled, features={statistics_name: statistics_func}, n_jobs=n_jobs)
+                calculated_statistics[statistics_name] = self._features_to_model_input(statistics_features)[-n_timestamps:]
+            
+            return X, y, calculated_statistics
 
     def get_experiment_data(self, 
                             data: dict[str, pd.DataFrame],
@@ -125,35 +132,122 @@ class DataPreparer:
                             end_date: datetime,
                             features: dict[str, Callable],
                             statistics: dict[str, Callable],
-                            ) -> pd.DataFrame:
+                            target: Callable,
+                            train_set_last_date: datetime | None=None,
+                            val_set_last_date: datetime | None=None,
+                            n_jobs: int=os.cpu_count()
+                            ) -> list[tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]]:
         daily_slices = self._get_daily_slices(
             data=data, 
             start_date=start_date, 
             end_date=end_date,
-            slice_length=Constants.Data.TRADING_DAY_LENGTH_MINUTES + self.in_seq_len + self.normalizer.window + 30
+            slice_length=Constants.Data.TRADING_DAY_LENGTH_MINUTES + self.in_seq_len + self.normalizer.window + 30,
+            verbose=False
         )
+        logging.info(f"Found {len(daily_slices)} daily slices")
 
-        raw_features = [self._generate_raw_features(slice, features) for slice in daily_slices]
+        train_slices, val_slices, test_slices = self._train_val_test_split(daily_slices, train_set_last_date, val_set_last_date)
 
-        return raw_features  
+        per_asset_target = self._train_target_per_asset(
+            target,
+            train_slices,
+            n_timestamps_per_slice=Constants.Data.TRADING_DAY_LENGTH_MINUTES
+        )
+        logging.info("Trained per-asset targets")
+
+        train_val_test_data = []
+        for slices in (train_slices, val_slices, test_slices):
+            list_of_x_y_statistics: list[tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]] = Parallel(n_jobs=n_jobs, backend="loky")(
+                delayed(self.transform_data_for_inference)(
+                    cur_slice,
+                    n_timestamps=Constants.Data.TRADING_DAY_LENGTH_MINUTES,
+                    features=features,
+                    include_target_and_statistics=True,
+                    per_asset_target=per_asset_target,
+                    statistics=statistics,
+                    n_jobs=1
+                )
+                for cur_slice in slices
+            )
+            x = np.vstack([cur_x for cur_x, _, _ in list_of_x_y_statistics])
+            y = np.vstack([cur_y for _, cur_y, _ in list_of_x_y_statistics])
+            list_of_statistics = [cur_statistics for _, _, cur_statistics in list_of_x_y_statistics]
+            statistics_values = {statistic_name: np.vstack([cur_statistics[statistic_name] for cur_statistics in list_of_statistics]) \
+                for statistic_name in list_of_statistics[0].keys()}
+            train_val_test_data.append((x, y, statistics_values))
+
+            # x, y, statistics = [], [], defaultdict(list)
+            # for cur_slice in slices:
+            #     cur_x, cur_y, cur_statistics = self.transform_data_for_inference(
+            #         cur_slice,
+            #         n_timestamps=Constants.Data.TRADING_DAY_LENGTH_MINUTES,
+            #         features=features,
+            #         include_target_and_statistics=True,
+            #         per_asset_target=per_asset_target,
+            #         statistics=statistics,
+            #         n_jobs=1
+            #     )
+            #     x.append(cur_x)
+            #     y.append(cur_y)
+            #     for statistic_name, statistic_values in cur_statistics.items():
+            #         statistics[statistic_name].append(statistic_values)
+
+            # train_val_test_data.append((
+            #     np.vstack(x),
+            #     np.vstack(y),
+            #     {statistic_name: np.vstack(statistic_values) for statistic_name, statistic_values in statistics.items()}
+            # ))
+
+        return train_val_test_data
+
+    def _train_val_test_split(self, 
+                              daily_slices: list[dict[str, pd.DataFrame]],
+                              train_set_last_date: datetime | None=None,
+                              val_set_last_date: datetime | None=None,
+                              ) -> tuple[list[dict[str, pd.DataFrame]], list[dict[str, pd.DataFrame]], list[dict[str, pd.DataFrame]]]:
+        test_slices, remaining_slices = (
+            [slice for slice in daily_slices if next(iter(slice.values()))['date'].max() > val_set_last_date],
+            [slice for slice in daily_slices if next(iter(slice.values()))['date'].max() <= val_set_last_date]
+        ) if val_set_last_date else ([], daily_slices)
+
+        val_slices, train_slices = (
+            [slice for slice in remaining_slices if next(iter(slice.values()))['date'].max() > train_set_last_date],
+            [slice for slice in remaining_slices if next(iter(slice.values()))['date'].max() <= train_set_last_date]
+        ) if train_set_last_date else ([], remaining_slices)
+
+        return train_slices, val_slices, test_slices
+
+    def _train_target_per_asset(self,
+                                target: Callable, 
+                                train_slices: list[dict[str, pd.DataFrame]],
+                                n_timestamps_per_slice: int=-1,
+                                ) -> dict[str, pd.DataFrame]:
+        asset_names = set(train_slices[0].keys())
+        per_asset_df = {
+            asset_name: pd.concat([slice[asset_name].tail(n_timestamps_per_slice) for slice in train_slices], ignore_index=True) \
+                for asset_name in asset_names
+        }
+        per_asset_target = {
+            asset_name: copy.deepcopy(target).fit(asset_df) \
+                for asset_name, asset_df in per_asset_df.items()
+        }
+
+        return per_asset_target
 
     def _get_daily_slices(self, 
                         data: dict[str, pd.DataFrame],
                         start_date: datetime, 
                         end_date: datetime,
-                        slice_length: int=(
-                            Constants.Data.TRADING_DAY_LENGTH_MINUTES
-                            + 60  # config.data_config.in_seq_len
-                            + 60  # config.data_config.normalizer.window
-                            + 30  # lookback in features 
-                        ),
-                        end_hour: int=Constants.Data.REGULAR_TRADING_HOURS_END.hour) -> list[dict[str, pd.DataFrame]]:
+                        slice_length: int,
+                        end_hour: int=Constants.Data.REGULAR_TRADING_HOURS_END.hour,
+                        verbose: bool=True
+                        ) -> list[dict[str, pd.DataFrame]]:
         current_day = pd.to_datetime(start_date).normalize()
         end_day = pd.to_datetime(end_date).normalize()
 
         cur_row_i = defaultdict(int)
         slices: list[dict[str, pd.DataFrame]] = []
-        while current_day <= end_day:
+        while current_day < end_day:
             slice_end_target = pd.Timestamp(current_day) + pd.Timedelta(hours=end_hour)
             current_day = current_day + pd.DateOffset(days=1)
             
@@ -172,7 +266,9 @@ class DataPreparer:
                     self._validate_slice_consistency(cur_day_slices, slice_length, slice_end_target)
                     slices.append(cur_day_slices)
 
-        self._log_last_timestamp_distribution(slices, self.date_column)
+        if verbose:
+            self._log_last_timestamp_distribution(slices, self.date_column)
+
         return slices
 
     @staticmethod

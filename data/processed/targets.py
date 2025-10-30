@@ -22,6 +22,8 @@ class Balanced3ClassClassification:
         self.lower_tertile = returns.quantile(1 / 3)
         self.upper_tertile = returns.quantile(2 / 3)
 
+        return self
+
     def __call__(self, data: pd.DataFrame) -> pd.Series:
         # ENSURE boundaries are available --------------------------------------------------------
         if self.lower_tertile is None or self.upper_tertile is None:
@@ -138,6 +140,8 @@ class Balanced5ClassClassification:
         self.q40 = returns.quantile(0.40)
         self.q60 = returns.quantile(0.60)
         self.q80 = returns.quantile(0.80)
+
+        return self
 
     # ------------------------------------------------------------------
     # Encoding
