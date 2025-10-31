@@ -33,9 +33,9 @@ class DataPreparer:
                             features: dict[str, Callable],
                             n_jobs: int=os.cpu_count() // 2
                             ) -> dict[str, pd.DataFrame]:
-        return dict(Parallel(n_jobs=n_jobs, backend="loky")(
+        return dict(sorted(Parallel(n_jobs=n_jobs, backend="loky")(
             delayed(self._raw_features_for_df)(asset_name, asset_df, features) \
-                for asset_name, asset_df in data.items())
+                for asset_name, asset_df in data.items()), key=lambda x: x[0])
         )
 
     def _raw_features_for_df(self, 
@@ -53,7 +53,7 @@ class DataPreparer:
         min_asset_length = min(len(df) for df in per_asset_df.values())
         per_asset_dfs_aligned = {asset: df.tail(min_asset_length).reset_index(drop=True) for asset, df in per_asset_df.items()}
 
-        per_asset_array = { a: df.to_numpy(dtype=np.float32).squeeze() for a, df in per_asset_dfs_aligned.items()}
+        per_asset_array = { a: df.to_numpy(dtype=np.float32).squeeze() for a, df in sorted(per_asset_dfs_aligned.items())}
         
         multi_asset_array = np.stack(
             [array for array in per_asset_array.values()], 
@@ -101,6 +101,8 @@ class DataPreparer:
                                       per_asset_target: dict[str, Callable] | None = None,
                                       n_jobs: int=os.cpu_count() // 2
                                       ) -> np.ndarray | tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]:
+        data = {asset_name: data[asset_name] for asset_name in sorted(data.keys())}
+
         data_filled = self._fill_missing_values(data)
 
         raw_features = self._generate_raw_features(data_filled, features=features, n_jobs=n_jobs)

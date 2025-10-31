@@ -4,6 +4,7 @@ import logging
 
 import torch
 from tqdm import tqdm
+import pandas as pd
 
 from ..agent import RlAgent
 from ..metrics import MetricsCalculator
@@ -154,6 +155,7 @@ class PolicyGradient:
         print(f"[PolicyGradient] [VAL] Epoch {epoch + 1}/{self.num_epochs} — Loss: {epoch_loss:.4f}")
 
         if realized_returns:
+            realized_returns = pd.Series(realized_returns).dropna().tolist()
             epoch_metrics = self.metrics_calculator(realized_returns)
             self.val_history.append(epoch_metrics)
             metrics_str = ", ".join(f"{k}: {v:.4f}" for k, v in epoch_metrics.items())
