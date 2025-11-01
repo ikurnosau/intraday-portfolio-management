@@ -113,6 +113,7 @@ class DataPreparer:
         )
 
         X = self._features_to_model_input(features_normalized)[-n_timestamps:]
+        assert not np.isnan(X).any(), "NaNs survived feature generation"
 
         if not include_target_and_statistics:
             return X
@@ -120,6 +121,7 @@ class DataPreparer:
             target_feature = {asset_name: per_asset_target[asset_name](asset_df_filled) \
                 for asset_name, asset_df_filled in data_filled.items()}
             y = self._features_to_model_input(target_feature)[-n_timestamps:]
+            assert not np.isnan(y).any(), "NaNs survived target generation"
 
             calculated_statistics: dict[str, np.ndarray] = {}
             for statistics_name, statistics_func in statistics.items():
@@ -177,28 +179,6 @@ class DataPreparer:
             statistics_values = {statistic_name: np.vstack([cur_statistics[statistic_name] for cur_statistics in list_of_statistics]) \
                 for statistic_name in list_of_statistics[0].keys()}
             train_val_test_data.append((x, y, statistics_values))
-
-            # x, y, statistics = [], [], defaultdict(list)
-            # for cur_slice in slices:
-            #     cur_x, cur_y, cur_statistics = self.transform_data_for_inference(
-            #         cur_slice,
-            #         n_timestamps=Constants.Data.TRADING_DAY_LENGTH_MINUTES,
-            #         features=features,
-            #         include_target_and_statistics=True,
-            #         per_asset_target=per_asset_target,
-            #         statistics=statistics,
-            #         n_jobs=1
-            #     )
-            #     x.append(cur_x)
-            #     y.append(cur_y)
-            #     for statistic_name, statistic_values in cur_statistics.items():
-            #         statistics[statistic_name].append(statistic_values)
-
-            # train_val_test_data.append((
-            #     np.vstack(x),
-            #     np.vstack(y),
-            #     {statistic_name: np.vstack(statistic_values) for statistic_name, statistic_values in statistics.items()}
-            # ))
 
         return train_val_test_data
 
@@ -267,6 +247,8 @@ class DataPreparer:
                 if len(cur_day_slices) == len(data):
                     self._validate_slice_consistency(cur_day_slices, slice_length, slice_end_target)
                     slices.append(cur_day_slices)
+                else: 
+                    logging.info(f"Skipping day {current_day} because it has less than {len(data)} assets")
 
         if verbose:
             self._log_last_timestamp_distribution(slices, self.date_column)
