@@ -41,18 +41,25 @@ class StooqRetriever:
             _download_from_gdrive()
     
     def bars(self,
-             start: datetime=datetime(1999, 6, 1, tzinfo=timezone.utc),
-             end: datetime=datetime(2019, 1, 1, tzinfo=timezone.utc)) -> dict[str: pd.DataFrame]:
+             start: datetime=datetime(1999, 6, 1, tzinfo=Constants.Data.EASTERN_TZ),
+             end: datetime=datetime(2019, 1, 1, tzinfo=Constants.Data.EASTERN_TZ)) -> dict[str: pd.DataFrame]:
+        start = pd.to_datetime(start)
+        end = pd.to_datetime(end)
+
         asset_dfs = {}
         for name in os.listdir(self.ROOT_DIR):
             df = pd.read_csv(os.path.join(self.ROOT_DIR, name))
             df.columns = df.columns.str.lower()
-            df['date'] = pd.to_datetime(df['date'], utc=True)
-            df['date'] = df['date'].apply(lambda x: x.replace(hour=17, minute=0, second=0, microsecond=0))
-            if df['date'].min() <= start:
-                asset_dfs[name.split('_')[0].upper()] = df.loc[(df['date'] >= start) & (df['date'] <= end)]
-            else:
-                logging.info(f'{name} has no data prior to 1999-06-01')
+
+            df['date'] = pd.to_datetime(df['date'])
+            df['date'] = df['date'].apply(lambda x: x.replace(hour=13, minute=0, second=0, microsecond=0))
+            df['date'] = df['date'].dt.tz_localize(Constants.Data.EASTERN_TZ)
+
+            df['ask_price'] = 0
+            df['bid_price'] = 0
+
+            asset_dfs[name.split('_')[0].upper()] = df.loc[(df['date'] >= start) & (df['date'] <= end)]
+
         return asset_dfs
 
     def bars_with_quotes(self) -> dict[str: pd.DataFrame]:

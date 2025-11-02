@@ -1,9 +1,11 @@
 import sys
 import os
+
+from sympy.functions.elementary.piecewise import false
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
-from datetime import datetime, timezone, time
+from datetime import datetime, timedelta
 import torch
 import numpy as np
 
@@ -13,6 +15,7 @@ from data.processed.indicators import *
 from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification, FutureMeanReturnClassification
 from data.processed.normalization import MinMaxNormalizer, ZScoreOverWindowNormalizer, MinMaxNormalizerOverWindow
 from data.processed.missing_values_handling import ForwardFillFlatBars, DummyMissingValuesHandler
+from core_data_prep.core_data_prep import ContinuousForwardFill
 from modeling.models.tsa_classifier import TemporalSpatial
 from modeling.models.lstm import LSTMClassifier
 from modeling.models.mlp import MLP
@@ -21,12 +24,21 @@ from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
 
 frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Minute)
+target = FutureMeanReturnClassification(base_feature='close', horizon=1)
 
 data_config = DataConfig(
     symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
     frequency=frequency,
-    start=datetime(2024, 6, 1, tzinfo=timezone.utc),
-    end=datetime(2025, 6, 1, tzinfo=timezone.utc),
+
+    # start=datetime(2024, 6, 1, tzinfo=timezone.utc),
+    # end=datetime(2025, 6, 1, tzinfo=timezone.utc),
+    # train_set_last_date=datetime(2025, 4, 1, tzinfo=timezone.utc), 
+    # val_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
+
+    start=datetime(2024, 9, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    end=datetime(2025, 10, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    train_set_last_date=datetime(2025, 7, 1, tzinfo=Constants.Data.EASTERN_TZ), 
+    val_set_last_date=datetime(2025, 8, 1, tzinfo=Constants.Data.EASTERN_TZ),
 
     features={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------
@@ -58,16 +70,31 @@ data_config = DataConfig(
         "ema_slope": lambda df: EMA(3)(df) - EMA(15)(df),     # or ratio
         "vol_slope": lambda df: df['close'].pct_change()
                              .rolling(10).std()
-                             / (df['close'].pct_change().rolling(20).std() + 1e-8)
+                             / (df['close'].pct_change().rolling(20).std() + 1e-8),
+
+        "is_missing": lambda df: df['is_missing'],
     },
-    target=FutureMeanReturnClassification(base_feature='close', horizon=1),
+
+    statistics={
+        "next_return": lambda df: df[getattr(target, 'base_feature', 'close')].pct_change()\
+            .shift(-1).astype(np.float32),
+        "volatility": lambda df: df[getattr(target, 'base_feature', 'close')].pct_change().astype(np.float32)\
+            .rolling(window=10).std().fillna(0.0).astype(np.float32),
+        "spread": lambda df: (df['ask_price'] - df['bid_price']) / df['ask_price'],
+    },
+    
+    target=target,
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
-    missing_values_handler=ForwardFillFlatBars(frequency=str(frequency)),
-    train_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc), 
+    missing_values_handler=ContinuousForwardFill(frequency=str(frequency)),
+
     in_seq_len=60,
     multi_asset_prediction=True,
 
-    cutoff_time=time(hour=14, minute=10),
+    cutoff_time=(datetime.combine(
+        datetime.today(), 
+        Constants.Data.REGULAR_TRADING_HOURS_START
+    ) + timedelta(minutes=30)) \
+        .time(),
 )
 
 
@@ -117,7 +144,7 @@ train_config = TrainConfig(
     },
     metrics={"rmse": rmse_regression},
     num_epochs=20,
-    early_stopping_patience=5,
+    early_stopping_patience=10,
 
     device=torch.device("cuda"),
     cudnn_benchmark=True,

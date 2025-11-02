@@ -23,7 +23,7 @@ from modeling.models.tcn import TCN
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
 
-frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Minute)
+frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Day)
 target = FutureMeanReturnClassification(base_feature='close', horizon=1)
 
 data_config = DataConfig(
@@ -35,17 +35,17 @@ data_config = DataConfig(
     # train_set_last_date=datetime(2025, 4, 1, tzinfo=timezone.utc), 
     # val_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
 
-    start=datetime(2024, 9, 1, tzinfo=Constants.Data.EASTERN_TZ),
-    end=datetime(2025, 10, 1, tzinfo=Constants.Data.EASTERN_TZ),
-    train_set_last_date=datetime(2025, 7, 1, tzinfo=Constants.Data.EASTERN_TZ), 
-    val_set_last_date=datetime(2025, 8, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    start=datetime(1970, 1, 2, tzinfo=Constants.Data.EASTERN_TZ),
+    end=datetime(2019, 1, 2, tzinfo=Constants.Data.EASTERN_TZ),
+    train_set_last_date=datetime(2014, 1, 1, tzinfo=Constants.Data.EASTERN_TZ), 
+    val_set_last_date=datetime(2016, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
 
     features={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------
-        "log_ret": lambda df: np.log(df['close'] / df['close'].shift(1)),
-        "hl_range": lambda df: (df['high'] - df['low']) / df['close'],
-        "close_open": lambda df: (df['close'] - df['open']) / df['open'],
-        "vol_delta": lambda df: np.log(df['volume'] / (df['volume'].shift(1) + 1e-8) + 1e-8),
+        "log_ret": lambda df: np.log((df['close'] + 1e-8) / (df['close'].shift(1) + 1e-8)).fillna(0.0),
+        "hl_range": lambda df: (df['high'] - df['low']) / (df['close'] + 1e-8),
+        "close_open": lambda df: (df['close'] - df['open']) / (df['open'] + 1e-8),
+        "vol_delta": lambda df: np.log((df['volume'] + 1e-8) / (df['volume'].shift(1) + 1e-8)).fillna(0.0),
 
         # --- Momentum & trend -----------------------------------------------------------------------
         "EMA_fast": EMA(3),              # fast EMA (≈ 3-min)
@@ -56,10 +56,10 @@ data_config = DataConfig(
         # "RSI12": RSI(12),
 
         # --- Volatility ----------------------------------------------------------------------------
-        "realvol20": lambda df: df['close'].pct_change().rolling(20).std().astype(np.float32),
+        "realvol20": lambda df: (df['close'] + 1e-8).pct_change().rolling(20).std().astype(np.float32).fillna(0.0),
 
         # --- Microstructure & order-flow -----------------------------------------------------------
-        "VWAP_dist": lambda df: (df['close'] - VWAP()(df)) / df['close'],
+        "VWAP_dist": lambda df: (df['close'] - VWAP()(df)) / (df['close'] + 1e-8),
         "loc_in_range": lambda df: (df['close'] - df['low']) / (df['high'] - df['low'] + 1e-8),
 
         # --- Time-of-day cyclic encodings -----------------------------------------------------------
@@ -68,19 +68,19 @@ data_config = DataConfig(
 
         # --- Derived features ----------------------------------------------------------------------
         "ema_slope": lambda df: EMA(3)(df) - EMA(15)(df),     # or ratio
-        "vol_slope": lambda df: df['close'].pct_change()
+        "vol_slope": lambda df: ((df['close'] + 1e-8).pct_change()
                              .rolling(10).std()
-                             / (df['close'].pct_change().rolling(20).std() + 1e-8),
+                             / ((df['close'] + 1e-8).pct_change().rolling(20).std() + 1e-8)).fillna(0.0),
 
         "is_missing": lambda df: df['is_missing'],
     },
 
     statistics={
         "next_return": lambda df: df[getattr(target, 'base_feature', 'close')].pct_change()\
-            .shift(-1).astype(np.float32),
+            .shift(-1).fillna(0.0).astype(np.float32),
         "volatility": lambda df: df[getattr(target, 'base_feature', 'close')].pct_change().astype(np.float32)\
             .rolling(window=10).std().fillna(0.0).astype(np.float32),
-        "spread": lambda df: (df['ask_price'] - df['bid_price']) / df['ask_price'],
+        "spread": lambda df: (df['ask_price'] - df['bid_price']) / (df['ask_price'] + 1e-8),
     },
     
     target=target,
