@@ -22,11 +22,13 @@ class DataPreparer:
                  normalizer: Callable,
                  missing_values_handler: Callable,
                  in_seq_len: int,
+                 frequency: str,
                  date_column: str = 'date'):
         self.normalizer = normalizer
         self.missing_values_handler = missing_values_handler
         self.in_seq_len = in_seq_len
         self.date_column = date_column
+        self.frequency = frequency
 
     def _generate_raw_features(self, 
                             data: dict[str, pd.DataFrame], 
@@ -46,6 +48,8 @@ class DataPreparer:
         feat_df = pd.DataFrame()
         for name, transform in features.items():
             feat_df[name] = transform(asset_df).astype(np.float32)
+
+        assert not feat_df.isna().any().any(), f"NaNs in features for {asset_name}"
 
         return asset_name, feat_df
 
@@ -141,21 +145,31 @@ class DataPreparer:
                             val_set_last_date: datetime | None=None,
                             n_jobs: int=os.cpu_count()
                             ) -> list[tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]]:
-        daily_slices = self._get_daily_slices(
-            data=data, 
-            start_date=start_date, 
-            end_date=end_date,
-            slice_length=Constants.Data.TRADING_DAY_LENGTH_MINUTES + self.in_seq_len + self.normalizer.window + 30,
-            verbose=False
-        )
-        logging.info(f"Found {len(daily_slices)} daily slices")
+        if self.frequency == '1Min':
+            n_timestamps = Constants.Data.TRADING_DAY_LENGTH_MINUTES
 
-        train_slices, val_slices, test_slices = self._train_val_test_split(daily_slices, train_set_last_date, val_set_last_date)
+            all_slices = self._get_daily_slices(
+                data=data, 
+                start_date=start_date, 
+                end_date=end_date,
+                slice_length=n_timestamps + self.in_seq_len + self.normalizer.window + 30,
+                verbose=False
+            )
+            logging.info(f"Found {len(all_slices)} daily slices")
+
+            train_slices, val_slices, test_slices = self._train_val_test_split(all_slices, train_set_last_date, val_set_last_date)
+        elif self.frequency == '1Day':
+            n_timestamps = - self.in_seq_len - self.normalizer.window - 30
+            logging.info(f"Using monolithic slices with {n_timestamps} timestamps")
+            train_slices, val_slices, test_slices = self._get_monolith_slices(data, train_set_last_date, val_set_last_date)
+            logging.info(f"Found {len(next(iter(train_slices[0].values())))} train slices, {len(next(iter(val_slices[0].values())))} val slices, {len(next(iter(test_slices[0].values())))} test slices")
+        else:
+            raise ValueError(f"Unsupported frequency: {self.frequency}")
 
         per_asset_target = self._train_target_per_asset(
             target,
             train_slices,
-            n_timestamps_per_slice=Constants.Data.TRADING_DAY_LENGTH_MINUTES
+            n_timestamps_per_slice=n_timestamps
         )
         logging.info("Trained per-asset targets")
 
@@ -164,7 +178,7 @@ class DataPreparer:
             list_of_x_y_statistics: list[tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]] = Parallel(n_jobs=n_jobs, backend="loky")(
                 delayed(self.transform_data_for_inference)(
                     cur_slice,
-                    n_timestamps=Constants.Data.TRADING_DAY_LENGTH_MINUTES,
+                    n_timestamps=n_timestamps,
                     features=features,
                     include_target_and_statistics=True,
                     per_asset_target=per_asset_target,
@@ -175,6 +189,7 @@ class DataPreparer:
             )
             x = np.vstack([cur_x for cur_x, _, _ in list_of_x_y_statistics])
             y = np.vstack([cur_y for _, cur_y, _ in list_of_x_y_statistics])
+
             list_of_statistics = [cur_statistics for _, _, cur_statistics in list_of_x_y_statistics]
             statistics_values = {statistic_name: np.vstack([cur_statistics[statistic_name] for cur_statistics in list_of_statistics]) \
                 for statistic_name in list_of_statistics[0].keys()}
@@ -255,6 +270,26 @@ class DataPreparer:
 
         return slices
 
+    def _get_monolith_slices(self,
+                             data: dict[str, pd.DataFrame],
+                             train_set_last_date: datetime | None=None,
+                             val_set_last_date: datetime | None=None,
+                             ) -> tuple[list[dict[str, pd.DataFrame]], list[dict[str, pd.DataFrame]], list[dict[str, pd.DataFrame]]]:
+        first_timestamp = min(df[self.date_column].min() for df in data.values())
+
+        first_row = {col: 0 if col != self.date_column else first_timestamp for col in next(iter(data.values())).columns}
+        data = { asset_name: (
+            pd.concat([pd.DataFrame([first_row]), df], ignore_index=True) \
+                if min(df[self.date_column]) > first_timestamp else df
+            ) \
+            for asset_name, df in data.items()}
+
+        train_data = { asset_name: df[df[self.date_column] <= train_set_last_date] for asset_name, df in data.items()}
+        val_data = { asset_name: df[(df[self.date_column] > train_set_last_date) & (df[self.date_column] <= val_set_last_date)] for asset_name, df in data.items()}
+        test_data = { asset_name: df[df[self.date_column] > val_set_last_date] for asset_name, df in data.items()}
+
+        return [train_data], [val_data], [test_data]
+
     @staticmethod
     def _validate_slice_consistency(cur_day_slices: dict[str, pd.DataFrame], 
                                      slice_length: int, 
@@ -300,6 +335,8 @@ class ContinuousForwardFill:
     def __init__(self, frequency: str):
         if frequency == '1Min':
             self.frequency = 'min'
+        elif frequency == '1Day':
+            self.frequency = 'd'
         else:
             raise ValueError(f"Unsupported frequency: {frequency}")
 
@@ -324,5 +361,7 @@ class ContinuousForwardFill:
         data_continuous.loc[missing, 'low'] = data_continuous.loc[missing, 'close']
         data_continuous.loc[missing, 'volume'] = 0
         data_continuous['is_missing'] = missing.astype(np.float32)
+
+        assert not data_continuous.isna().values.any(), "Filling missing values resulted in NaNs!"
 
         return data_continuous.reset_index().rename(columns={'index':date_column})
