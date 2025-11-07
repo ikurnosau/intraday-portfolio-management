@@ -12,7 +12,7 @@ import numpy as np
 from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig, ObservabilityConfig
 from config.constants import Constants
 from data.processed.indicators import *
-from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification, FutureMeanReturnClassification, TripleClassification, ReturnOverHorizon
+from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification, FutureMeanReturnClassification, TripleClassification
 from data.processed.normalization import MinMaxNormalizer, ZScoreOverWindowNormalizer, MinMaxNormalizerOverWindow
 from data.processed.missing_values_handling import ForwardFillFlatBars, DummyMissingValuesHandler
 from core_data_prep.core_data_prep import ContinuousForwardFill
@@ -24,7 +24,7 @@ from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
 
 frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Day)
-target = TripleClassification(horizon=1, base_feature='close')
+target = TripleClassification(horizon=30, base_feature='close')
 
 data_config = DataConfig(
     symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
@@ -37,8 +37,8 @@ data_config = DataConfig(
 
     start=datetime(1970, 1, 2, tzinfo=Constants.Data.EASTERN_TZ),
     end=datetime(2019, 1, 2, tzinfo=Constants.Data.EASTERN_TZ),
-    train_set_last_date=datetime(2014, 1, 1, tzinfo=Constants.Data.EASTERN_TZ), 
-    val_set_last_date=datetime(2016, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    train_set_last_date=datetime(2008, 1, 1, tzinfo=Constants.Data.EASTERN_TZ), 
+    val_set_last_date=datetime(2010, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
 
     features={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------
@@ -106,7 +106,7 @@ model_config = ModelConfig(
         lstm_layers=2,
         bidirectional=True,
         dropout=0.2,
-        num_heads=4,
+        num_heads=1,
         use_spatial_attention=False,
         num_assets=len(data_config.symbol_or_symbols),
         asset_embed_dim=0,

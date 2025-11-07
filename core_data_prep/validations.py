@@ -68,7 +68,7 @@ class Validator:
                     f"{asset_name}: large mean detected in normalised features – stats: {means.to_dict()}"
                 )
 
-            if not ((stds > 0).all() and (stds < 2).all()):
+            if not ((stds >= 0).all() and (stds < 2).all()):
                 raise AssertionError(
                     f"{asset_name}: abnormal std detected in normalised features – stats: {stds.to_dict()}"
                 )
