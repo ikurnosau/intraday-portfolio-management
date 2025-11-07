@@ -246,15 +246,21 @@ class DataPreparer:
                                 train_slices: list[dict[str, pd.DataFrame]],
                                 n_timestamps_per_slice: int=-1,
                                 ) -> dict[str, pd.DataFrame]:
-        asset_names = set(train_slices[0].keys())
-        per_asset_df = {
-            asset_name: pd.concat([slice[asset_name].tail(n_timestamps_per_slice) for slice in train_slices], ignore_index=True) \
-                for asset_name in asset_names
-        }
-        per_asset_target = {
-            asset_name: copy.deepcopy(target).fit(asset_df) \
-                for asset_name, asset_df in per_asset_df.items()
-        }
+        if hasattr(target, "fit"):
+            asset_names = set(train_slices[0].keys())
+            per_asset_df = {
+                asset_name: pd.concat([slice[asset_name].tail(n_timestamps_per_slice) for slice in train_slices], ignore_index=True) \
+                    for asset_name in asset_names
+            }
+            per_asset_target = {
+                asset_name: copy.deepcopy(target).fit(asset_df) \
+                    for asset_name, asset_df in per_asset_df.items()
+            }
+        else: 
+            per_asset_target = {
+                asset_name: copy.deepcopy(target) \
+                    for asset_name in train_slices[0].keys()
+            }
 
         return per_asset_target
 

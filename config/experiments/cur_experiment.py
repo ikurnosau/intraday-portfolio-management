@@ -12,7 +12,7 @@ import numpy as np
 from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig, ObservabilityConfig
 from config.constants import Constants
 from data.processed.indicators import *
-from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification, FutureMeanReturnClassification
+from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification, FutureMeanReturnClassification, TripleClassification, ReturnOverHorizon
 from data.processed.normalization import MinMaxNormalizer, ZScoreOverWindowNormalizer, MinMaxNormalizerOverWindow
 from data.processed.missing_values_handling import ForwardFillFlatBars, DummyMissingValuesHandler
 from core_data_prep.core_data_prep import ContinuousForwardFill
@@ -24,7 +24,7 @@ from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
 
 frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Day)
-target = FutureMeanReturnClassification(base_feature='close', horizon=1)
+target = TripleClassification(horizon=1, base_feature='close')
 
 data_config = DataConfig(
     symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
@@ -32,7 +32,7 @@ data_config = DataConfig(
 
     # start=datetime(2024, 6, 1, tzinfo=timezone.utc),
     # end=datetime(2025, 6, 1, tzinfo=timezone.utc),
-    # train_set_last_date=datetime(2025, 4, 1, tzinfo=timezone.utc), 
+    # train_set_last_date=datetime(2025, 4, 1, tzinfo=timezone.utc),
     # val_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
 
     start=datetime(1970, 1, 2, tzinfo=Constants.Data.EASTERN_TZ),
@@ -87,7 +87,7 @@ data_config = DataConfig(
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
     missing_values_handler=ContinuousForwardFill(frequency=str(frequency)),
 
-    in_seq_len=60,
+    in_seq_len=30,
     multi_asset_prediction=True,
 
     cutoff_time=(datetime.combine(
@@ -102,14 +102,14 @@ model_config = ModelConfig(
     model=TemporalSpatial(
         input_dim=len(data_config.features),
         output_dim=1,  # regression
-        hidden_dim=128,
+        hidden_dim=64,
         lstm_layers=2,
         bidirectional=True,
         dropout=0.2,
         num_heads=4,
-        use_spatial_attention=True,
+        use_spatial_attention=False,
         num_assets=len(data_config.symbol_or_symbols),
-        asset_embed_dim=16,
+        asset_embed_dim=0,
     ),
     # model=TCN(
     #     in_channels=len(data_config.features),
@@ -149,7 +149,7 @@ train_config = TrainConfig(
     device=torch.device("cuda"),
     cudnn_benchmark=True,
 
-    batch_size=128,
+    batch_size=16,
     shuffle=True,
     num_workers=8,
     prefetch_factor=4,

@@ -52,6 +52,23 @@ class BinaryClassification:
         return target
 
 
+class TripleClassification:
+    def __init__(self, horizon=1, base_feature: str='close'):
+        self.horizon = horizon
+        self.base_feature = base_feature
+
+    def __call__(self, data: pd.DataFrame) -> pd.Series:
+        prices = data[self.base_feature]
+        future_return = prices.shift(-self.horizon) / prices - 1.0
+
+        # return_feature = data[self.base_feature].pct_change()
+        # future_return = return_feature.shift(-1)
+
+        target = future_return.apply(lambda r: 1 if r > 0 else 0.5 if r == 0 else 0).astype(np.float32)
+
+        return target
+
+
 class MeanReturnSignClassification:
     """Binary target based on the *sign* of the **mean** return over the next *horizon* periods.
 
