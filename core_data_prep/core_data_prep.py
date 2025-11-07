@@ -14,6 +14,7 @@ import logging
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 from data.processed.data_processing_utils import filter_by_regular_hours
+from core_data_prep.validations import Validator
 from config.constants import Constants
 
 
@@ -23,19 +24,23 @@ class DataPreparer:
                  missing_values_handler: Callable,
                  in_seq_len: int,
                  frequency: str,
-                 date_column: str = 'date'):
+                 validator: Validator|None=None,
+                 date_column: str = 'date',
+                 backend: str = 'loky'):
         self.normalizer = normalizer
         self.missing_values_handler = missing_values_handler
         self.in_seq_len = in_seq_len
         self.date_column = date_column
         self.frequency = frequency
+        self.validator = validator
+        self.backend = backend
 
     def _generate_raw_features(self, 
                             data: dict[str, pd.DataFrame], 
                             features: dict[str, Callable],
                             n_jobs: int=os.cpu_count() // 2
                             ) -> dict[str, pd.DataFrame]:
-        return dict(sorted(Parallel(n_jobs=n_jobs, backend="loky")(
+        return dict(sorted(Parallel(n_jobs=n_jobs, backend=self.backend)(
             delayed(self._raw_features_for_df)(asset_name, asset_df, features) \
                 for asset_name, asset_df in data.items()), key=lambda x: x[0])
         )
@@ -48,8 +53,6 @@ class DataPreparer:
         feat_df = pd.DataFrame()
         for name, transform in features.items():
             feat_df[name] = transform(asset_df).astype(np.float32)
-
-        assert not feat_df.isna().any().any(), f"NaNs in features for {asset_name}"
 
         return asset_name, feat_df
 
@@ -74,13 +77,22 @@ class DataPreparer:
             y_or_statistics = multi_asset_array
             array_sequential = y_or_statistics[..., self.in_seq_len - 1:]
 
-        return np.swapaxes(array_sequential, 0, 1)
+        array_sequential = np.swapaxes(array_sequential, 0, 1)
+
+        if self.validator is not None:
+            self.validator.validate_sequential_array(array_sequential)
+
+        return array_sequential
 
     def _fill_missing_values(self, data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
         last_timestamp = max(df[self.date_column].max() for df in data.values())
-
-        return {asset_name: self.missing_values_handler(asset_df, last_timestamp, date_column=self.date_column) \
+        filled_data = {asset_name: self.missing_values_handler(asset_df, last_timestamp, date_column=self.date_column) \
             for asset_name, asset_df in data.items()}
+
+        if self.validator is not None:
+            self.validator.validate_filled_data(filled_data)
+        
+        return filled_data
 
     def _normalize_features(self, 
                             features: dict[str, pd.DataFrame], 
@@ -94,6 +106,10 @@ class DataPreparer:
             ).astype(np.float32)
             features_normalized[asset_name] = asset_feautures_normalized
 
+
+        if self.validator is not None:
+            self.validator.validate_normalized_features(features_normalized, features_to_normalize)
+
         return features_normalized
 
     def transform_data_for_inference(self, 
@@ -106,10 +122,14 @@ class DataPreparer:
                                       n_jobs: int=os.cpu_count() // 2
                                       ) -> np.ndarray | tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]:
         data = {asset_name: data[asset_name] for asset_name in sorted(data.keys())}
+        if self.validator is not None:
+            self.validator.validate_input_data(data)
 
         data_filled = self._fill_missing_values(data)
 
         raw_features = self._generate_raw_features(data_filled, features=features, n_jobs=n_jobs)
+        if self.validator is not None:
+            self.validator.validate_raw_features(raw_features)
 
         features_normalized = self._normalize_features(
             raw_features,
@@ -117,7 +137,8 @@ class DataPreparer:
         )
 
         X = self._features_to_model_input(features_normalized)[-n_timestamps:]
-        assert not np.isnan(X).any(), "NaNs survived feature generation"
+        if self.validator is not None:
+            self.validator.validate_x(X, n_assets=len(data), seq_len=self.in_seq_len)
 
         if not include_target_and_statistics:
             return X
@@ -125,13 +146,19 @@ class DataPreparer:
             target_feature = {asset_name: per_asset_target[asset_name](asset_df_filled) \
                 for asset_name, asset_df_filled in data_filled.items()}
             y = self._features_to_model_input(target_feature)[-n_timestamps:]
-            assert not np.isnan(y).any(), "NaNs survived target generation"
+            if self.validator is not None:
+             self.validator.validate_target(y)
 
             calculated_statistics: dict[str, np.ndarray] = {}
             for statistics_name, statistics_func in statistics.items():
                 statistics_features = self._generate_raw_features(data_filled, features={statistics_name: statistics_func}, n_jobs=n_jobs)
                 calculated_statistics[statistics_name] = self._features_to_model_input(statistics_features)[-n_timestamps:]
+                if self.validator is not None:
+                    self.validator.validate_statistics(statistics_name, calculated_statistics[statistics_name])
             
+            if self.validator is not None:
+                self.validator.validate_x_target_statistics(X, y, calculated_statistics)
+
             return X, y, calculated_statistics
 
     def get_experiment_data(self, 
@@ -159,7 +186,7 @@ class DataPreparer:
 
             train_slices, val_slices, test_slices = self._train_val_test_split(all_slices, train_set_last_date, val_set_last_date)
         elif self.frequency == '1Day':
-            n_timestamps = - self.in_seq_len - self.normalizer.window - 30
+            n_timestamps = - self.normalizer.window
             logging.info(f"Using monolithic slices with {n_timestamps} timestamps")
             train_slices, val_slices, test_slices = self._get_monolith_slices(data, train_set_last_date, val_set_last_date)
             logging.info(f"Found {len(next(iter(train_slices[0].values())))} train slices, {len(next(iter(val_slices[0].values())))} val slices, {len(next(iter(test_slices[0].values())))} test slices")
@@ -175,7 +202,7 @@ class DataPreparer:
 
         train_val_test_data = []
         for slices in (train_slices, val_slices, test_slices):
-            list_of_x_y_statistics: list[tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]] = Parallel(n_jobs=n_jobs, backend="loky")(
+            list_of_x_y_statistics: list[tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]] = Parallel(n_jobs=n_jobs, backend=self.backend)(
                 delayed(self.transform_data_for_inference)(
                     cur_slice,
                     n_timestamps=n_timestamps,
@@ -260,7 +287,8 @@ class DataPreparer:
                         cur_day_slices[symbol] = df.iloc[slice_start_i:slice_end_i].reset_index(drop=True)
 
                 if len(cur_day_slices) == len(data):
-                    self._validate_slice_consistency(cur_day_slices, slice_length, slice_end_target)
+                    if self.validator is not None:
+                        self.validator.validate_slice_consistency(cur_day_slices, slice_length, slice_end_target)
                     slices.append(cur_day_slices)
                 else: 
                     logging.info(f"Skipping day {current_day} because it has less than {len(data)} assets")
@@ -276,13 +304,11 @@ class DataPreparer:
                              val_set_last_date: datetime | None=None,
                              ) -> tuple[list[dict[str, pd.DataFrame]], list[dict[str, pd.DataFrame]], list[dict[str, pd.DataFrame]]]:
         first_timestamp = min(df[self.date_column].min() for df in data.values())
-
-        first_row = {col: 0 if col != self.date_column else first_timestamp for col in next(iter(data.values())).columns}
-        data = { asset_name: (
-            pd.concat([pd.DataFrame([first_row]), df], ignore_index=True) \
-                if min(df[self.date_column]) > first_timestamp else df
-            ) \
-            for asset_name, df in data.items()}
+        for asset_name, df in list(data.items()):
+            if min(df[self.date_column]) > first_timestamp:
+                new_first_row = df.iloc[0].copy()
+                new_first_row[self.date_column] = first_timestamp
+                data[asset_name] = pd.concat([pd.DataFrame([new_first_row]), df], ignore_index=True)
 
         train_data = { asset_name: df[df[self.date_column] <= train_set_last_date] for asset_name, df in data.items()}
         val_data = { asset_name: df[(df[self.date_column] > train_set_last_date) & (df[self.date_column] <= val_set_last_date)] for asset_name, df in data.items()}
@@ -290,25 +316,6 @@ class DataPreparer:
 
         return [train_data], [val_data], [test_data]
 
-    @staticmethod
-    def _validate_slice_consistency(cur_day_slices: dict[str, pd.DataFrame], 
-                                     slice_length: int, 
-                                     slice_end_target: pd.Timestamp) -> None:
-        """
-        Validate that all dataframes in a slice have consistent lengths.
-        
-        """
-        slice_lengths = {symbol: len(df) for symbol, df in cur_day_slices.items()}
-        unique_lengths = set(slice_lengths.values())
-        
-        # Check that all dataframes have the same length
-        assert len(unique_lengths) == 1, \
-            f"Slice at {slice_end_target.date()}: Dataframes have different lengths: {slice_lengths}"
-        
-        # Verify all dataframes have the expected slice_length
-        for symbol, length in slice_lengths.items():
-            assert length == slice_length, \
-                f"Slice at {slice_end_target.date()}, {symbol}: Expected length {slice_length}, got {length}"
 
     @staticmethod
     def _log_last_timestamp_distribution(slices: list[dict[str, pd.DataFrame]], 
@@ -343,7 +350,7 @@ class ContinuousForwardFill:
     def __call__(self, data: pd.DataFrame, last_timestamp: datetime, date_column: str = 'date') -> pd.DataFrame:
         first_timestamp = data[date_column].min()
 
-        data[date_column] = pd.to_datetime(data[date_column])
+        data.loc[:, date_column] = pd.to_datetime(data[date_column])
         data = data.set_index(date_column)
 
         full_idx = pd.date_range(start=first_timestamp, end=last_timestamp, freq=self.frequency)
@@ -352,8 +359,12 @@ class ContinuousForwardFill:
         data_continuous['close'] = data_continuous['close'].ffill()
         if 'ask_price' in data_continuous.columns:
             data_continuous['ask_price'] = data_continuous['ask_price'].ffill()
+        if 'ask_size' in data_continuous.columns: 
+            data_continuous['ask_size'] = data_continuous['ask_size'].ffill()
         if 'bid_price' in data_continuous.columns:
             data_continuous['bid_price'] = data_continuous['bid_price'].ffill()
+        if 'bid_size' in data_continuous.columns:
+            data_continuous['bid_size'] = data_continuous['bid_size'].ffill()
 
         missing = data_continuous['volume'].isna()
         data_continuous.loc[missing, 'open'] = data_continuous.loc[missing, 'close']

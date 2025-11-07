@@ -136,14 +136,14 @@ class MinMaxNormalizerOverWindow:
         if self.fit_feature:
             if self.fit_feature not in data.columns:
                 raise KeyError(f"fit_feature '{self.fit_feature}' not found in data columns")
-            roll_min = data[self.fit_feature].rolling(self.window).min()
-            roll_max = data[self.fit_feature].rolling(self.window).max()
+            roll_min = data[self.fit_feature].rolling(self.window, min_periods=1).min()
+            roll_max = data[self.fit_feature].rolling(self.window, min_periods=1).max()
             denom = (roll_max - roll_min).abs() + self.eps
             # Align index for broadcasting
             scaled = (data.subtract(roll_min, axis=0)).divide(denom, axis=0)
         else:
-            roll_min = data.rolling(self.window).min()
-            roll_max = data.rolling(self.window).max()
+            roll_min = data.rolling(self.window, min_periods=1).min()
+            roll_max = data.rolling(self.window, min_periods=1).max()
             denom = (roll_max - roll_min).abs() + self.eps
             scaled = (data - roll_min) / denom
 
