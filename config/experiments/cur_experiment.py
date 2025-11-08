@@ -36,7 +36,7 @@ data_config = DataConfig(
     # val_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
 
     start=datetime(1970, 1, 2, tzinfo=Constants.Data.EASTERN_TZ),
-    end=datetime(2019, 1, 2, tzinfo=Constants.Data.EASTERN_TZ),
+    end=datetime(2019, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
     train_set_last_date=datetime(2008, 1, 1, tzinfo=Constants.Data.EASTERN_TZ), 
     val_set_last_date=datetime(2010, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
 
