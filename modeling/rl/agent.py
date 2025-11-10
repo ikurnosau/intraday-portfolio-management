@@ -14,24 +14,24 @@ from contextlib import contextmanager
 class RlAgent:
     """Couples a policy network with the trading environment."""
 
-    def __init__(self, actor: BaseActor, env: PortfolioEnvironment, single_action_per_trajectory: bool = False):
+    def __init__(self, actor: BaseActor, env: PortfolioEnvironment, horizon: int=1):
         self.actor = actor
         self.env = env
+        self.horizon = horizon
 
-        self.single_action_per_trajectory = single_action_per_trajectory
+        self.action_counter = 0
         self.last_action = None
 
         self.current_state: State | None = None
 
     def step(self) -> tuple[State, torch.Tensor, torch.Tensor] | None:
-        if self.single_action_per_trajectory: 
-            if self.last_action is None:
-                action = self.actor(self.current_state)
-                self.last_action = action
-            else:
-                action = self.last_action
-        else: 
-            action = self.actor(self.current_state)
+        if self.action_counter % self.horizon == 0:
+            action, log_prob = self.actor(self.current_state)
+            self.last_action = action
+        else:
+            action = self.last_action
+            log_prob = None
+        self.action_counter += 1
 
         reward, next_state = self.env.step(action)
 
@@ -41,7 +41,7 @@ class RlAgent:
 
         prev_state = self.current_state
         self.current_state = next_state
-        return prev_state, action, reward
+        return prev_state, action, reward, log_prob
 
     def generate_trajectory(self,
         signal_features_trajectory_batch: torch.Tensor,
@@ -56,9 +56,7 @@ class RlAgent:
             volatility_trajectory_batch=volatility_trajectory_batch,
         )
 
-        if self.single_action_per_trajectory:
-            self.last_action = None
-
+        self.action_counter = 0
         trajectory = []
         while True:
             step_out = self.step()

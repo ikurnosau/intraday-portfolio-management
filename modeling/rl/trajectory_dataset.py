@@ -5,32 +5,11 @@ from typing import Literal
 
 
 class TrajectoryDataset(Dataset):
-    def __init__(self, 
-                 signal_features: np.ndarray, 
-                 next_returns: np.ndarray, 
-                 spreads: np.ndarray, 
-                 volatility: np.ndarray, 
-                 trajectory_length: int, 
-                 horizon: int, 
-                 include_interhorizon_trajectories: bool=False):
-        signal_features_list, next_returns_list, spreads_list, volatility_list = [], [], [], []
-        start_offsets = np.arange(0, horizon) if include_interhorizon_trajectories else [0]
-        for start_offset in start_offsets:
-            for block_start in range(start_offset, len(signal_features) - horizon + 1, horizon): 
-                signal_features_list.append(signal_features[block_start])
-                next_returns_list.append(np.cumprod(next_returns[block_start:block_start + horizon] + 1, axis=0) - 1)
-                spreads_list.append(spreads[block_start])
-                volatility_list.append(volatility[block_start])
-
-            signal_features_list = signal_features_list[:len(signal_features_list) - (len(signal_features_list) % trajectory_length)]
-            next_returns_list = next_returns_list[:len(next_returns_list) - (len(next_returns_list) % trajectory_length)]
-            spreads_list = spreads_list[:len(spreads_list) - (len(spreads_list) % trajectory_length)]
-            volatility_list = volatility_list[:len(volatility_list) - (len(volatility_list) % trajectory_length)]
-
-        self.signal_features = torch.tensor(np.array(signal_features_list), dtype=torch.float32)
-        self.next_returns = torch.tensor(np.array(next_returns_list), dtype=torch.float32)
-        self.spreads = torch.tensor(np.array(spreads_list), dtype=torch.float32)
-        self.volatility = torch.tensor(np.array(volatility_list), dtype=torch.float32)
+    def __init__(self, signal_features: np.ndarray, next_returns: np.ndarray, spreads: np.ndarray, volatility: np.ndarray, trajectory_length: int):
+        self.signal_features = torch.tensor(signal_features, dtype=torch.float32)
+        self.next_returns = torch.tensor(next_returns, dtype=torch.float32)
+        self.spreads = torch.tensor(spreads, dtype=torch.float32)
+        self.volatility = torch.tensor(volatility, dtype=torch.float32)
         self.trajectory_length = trajectory_length
 
     def __len__(self):

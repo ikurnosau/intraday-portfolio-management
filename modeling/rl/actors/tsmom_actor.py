@@ -48,4 +48,4 @@ class TSMomActor(nn.Module, BaseActor):
         actions = torch.where(pos_mask, weight.expand_as(momentum), actions)
         actions = torch.where(neg_mask, -weight.expand_as(momentum), actions)
 
-        return actions 
+        return actions, torch.zeros_like(actions) 

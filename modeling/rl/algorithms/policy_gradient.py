@@ -78,6 +78,7 @@ class PolicyGradient:
                     continue
 
                 rewards = [step[2] for step in trajectory]  # list[(batch_size,)]
+                losses = [step[3] for step in trajectory]
                 epoch_realized_returns.extend(
                     torch.stack(rewards)\
                         .t()\
@@ -93,7 +94,7 @@ class PolicyGradient:
                         .detach().cpu().tolist()
                 )
 
-                loss = self.loss_fn(rewards)
+                loss = self.loss_fn(rewards, losses)
 
                 if training:
                     self.optimizer.zero_grad()

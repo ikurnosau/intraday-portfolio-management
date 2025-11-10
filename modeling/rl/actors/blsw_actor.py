@@ -46,4 +46,4 @@ class BLSWActor(nn.Module, BaseActor):
         actions.scatter_(1, loser_idx, weight)
         actions.scatter_(1, winner_idx, -weight)
 
-        return actions 
+        return actions, torch.zeros_like(actions)

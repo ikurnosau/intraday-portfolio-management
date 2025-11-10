@@ -49,7 +49,7 @@ class XSMomActor(nn.Module, BaseActor):
         actions.scatter_(1, topk_idx, weight)
         actions.scatter_(1, bottomk_idx, -weight)
 
-        return actions
+        return actions, torch.zeros_like(actions)
 
 
 

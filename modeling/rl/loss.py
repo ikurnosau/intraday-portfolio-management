@@ -2,6 +2,16 @@ import torch
 from typing import List
 
 
+class ReinforceLoss: 
+    def __init__(self, use_baseline: bool = True):
+        self.use_baseline = use_baseline
+
+    def __call__(self, rewards: List[torch.Tensor], log_probs: List[torch.Tensor]) -> torch.Tensor:
+        log_ret = torch.log1p(torch.stack(rewards)).sum(0)
+        adv = log_ret - log_ret.mean().detach() if self.use_baseline else log_ret
+        log_pi = torch.stack([prob for prob in log_probs if prob is not None]).sum(0)   # (B,)
+        return -(adv * log_pi).mean()
+
 class SumLogReturnLoss:
     def __init__(self, use_baseline: bool = True):
         self.use_baseline = use_baseline

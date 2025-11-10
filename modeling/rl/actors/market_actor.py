@@ -28,4 +28,4 @@ class MarketActor(nn.Module, BaseActor):
         actions = torch.ones_like(state.position, dtype=state.position.dtype)
         actions = actions / state.position.shape[-1]
 
-        return actions 
+        return actions , torch.zeros_like(actions)

@@ -49,7 +49,7 @@ class SignalPredictorActor(nn.Module, BaseActor):
         # Normalise so that Σ|a_i| = 1
         action = selected / (selected.abs().sum(dim=1, keepdim=True) + 1e-8)
 
-        return action
+        return action, torch.zeros_like(action)
 
     def train(self, mode: bool = True):
         """Override nn.Module.train to keep the frozen signal predictor in evaluation

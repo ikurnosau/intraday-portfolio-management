@@ -149,7 +149,7 @@ class RlActor(nn.Module, BaseActor):
 
         action = v / (smooth_abs(v).sum(dim=-1, keepdim=True) + 1e-8)
 
-        return action
+        return action, torch.zeros_like(action)
 
     def train(self, mode: bool = True):
         """Override nn.Module.train to keep the frozen signal predictor in evaluation

@@ -69,7 +69,7 @@ class HighEnergyLowFrictionActor(nn.Module, BaseActor):
         batch_arange = torch.arange(batch_size, device=action.device)
         action[batch_arange, chosen_idx] = chosen_sign
 
-        return action
+        return action, torch.zeros_like(action)
 
     def train(self, mode: bool = True):
         """Override nn.Module.train to keep the frozen signal predictor in evaluation
