@@ -22,10 +22,9 @@ class DataConfig:
     normalizer: Callable
     missing_values_handler: Callable
     in_seq_len: int
+    horizon: int
 
     multi_asset_prediction: bool
-
-    cutoff_time: datetime.time = None  # time-of-day cutoff for features
 
 
 @dataclass

@@ -62,7 +62,10 @@ class PortfolioEnvironment:
         next_index = self.state_index + 1
         if next_index >= self.signal_features_trajectory_batch.shape[1]:
             # End of episode
-            return torch.tensor(np.zeros(len(self.signal_features_trajectory_batch))), None
+            final_state = self._prepare_state_template(0)
+            final_state.position = action
+            reward = self.reward_function(self.current_state, final_state)
+            return reward, None
 
         next_state = self._prepare_state_template(next_index)
         next_state.position = action

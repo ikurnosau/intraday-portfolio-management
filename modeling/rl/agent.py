@@ -14,33 +14,22 @@ from contextlib import contextmanager
 class RlAgent:
     """Couples a policy network with the trading environment."""
 
-    def __init__(self, actor: BaseActor, env: PortfolioEnvironment, horizon: int=1):
+    def __init__(self, actor: BaseActor, env: PortfolioEnvironment):
         self.actor = actor
         self.env = env
-        self.horizon = horizon
-
-        self.action_counter = 0
-        self.last_action = None
 
         self.current_state: State | None = None
 
     def step(self) -> tuple[State, torch.Tensor, torch.Tensor] | None:
-        if self.action_counter % self.horizon == 0:
-            action, log_prob = self.actor(self.current_state)
-            self.last_action = action
-        else:
-            action = self.last_action
-            log_prob = None
-        self.action_counter += 1
-
-        reward, next_state = self.env.step(action)
-
-        if next_state is None:
-            # Episode finished
+        if self.current_state is None: 
             return None
+
+        action, log_prob = self.actor(self.current_state)
+        reward, next_state = self.env.step(action)
 
         prev_state = self.current_state
         self.current_state = next_state
+        
         return prev_state, action, reward, log_prob
 
     def generate_trajectory(self,

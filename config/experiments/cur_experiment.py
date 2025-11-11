@@ -24,7 +24,8 @@ from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
 
 frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Day)
-target = TripleClassification(horizon=30, base_feature='close')
+horizon = 30
+target = TripleClassification(horizon=horizon, base_feature='close')
 
 data_config = DataConfig(
     symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
@@ -76,8 +77,7 @@ data_config = DataConfig(
     },
 
     statistics={
-        "next_return": lambda df: df[getattr(target, 'base_feature', 'close')].pct_change()\
-            .shift(-1).fillna(0.0).astype(np.float32),
+        "next_return": lambda df: (df['close'].shift(-horizon) / df['close'] - 1.0).fillna(0.0).astype(np.float32),
         "volatility": lambda df: df[getattr(target, 'base_feature', 'close')].pct_change().astype(np.float32)\
             .rolling(window=10).std().fillna(0.0).astype(np.float32),
         "spread": lambda df: (df['ask_price'] - df['bid_price']) / (df['ask_price'] + 1e-8),
@@ -88,13 +88,8 @@ data_config = DataConfig(
     missing_values_handler=ContinuousForwardFill(frequency=str(frequency)),
 
     in_seq_len=30,
+    horizon=horizon,
     multi_asset_prediction=True,
-
-    cutoff_time=(datetime.combine(
-        datetime.today(), 
-        Constants.Data.REGULAR_TRADING_HOURS_START
-    ) + timedelta(minutes=30)) \
-        .time(),
 )
 
 

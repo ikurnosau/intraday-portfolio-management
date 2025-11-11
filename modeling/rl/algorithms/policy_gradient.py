@@ -75,6 +75,7 @@ class PolicyGradient:
                 )
 
                 if not trajectory:
+                    print("I'm used")
                     continue
 
                 rewards = [step[2] for step in trajectory]  # list[(batch_size,)]

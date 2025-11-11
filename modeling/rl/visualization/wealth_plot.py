@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 def plot_cumulative_wealth(returns_dict: dict[str, list[float]], start_time: datetime, end_time: datetime):
     # Create uniform datetime range
-    n_points = len(next(iter(returns_dict.values())))  # get length from any series
+    n_points = len(next(iter(returns_dict.values()))) + 1  # get length from any series
 
     time_points = [
         start_time + i * (end_time - start_time) / (n_points - 1)
@@ -18,7 +18,7 @@ def plot_cumulative_wealth(returns_dict: dict[str, list[float]], start_time: dat
     # Plot
     plt.figure(figsize=(12, 6))
     for name, returns in returns_dict.items():
-        wealth = initial_wealth * np.cumprod(1 + np.array(returns))
+        wealth = initial_wealth * np.cumprod(1 + np.array([0] + returns))
         plt.plot(time_points, wealth, label=name)
 
     # Formatting
