@@ -69,6 +69,17 @@ class TripleClassification:
         return target
 
 
+class ReturnOverHorizon: 
+    def __init__(self, horizon: int = 30, base_feature: str = "close"):
+        self.horizon = horizon
+        self.base_feature = base_feature
+
+    def __call__(self, data: pd.DataFrame) -> pd.Series:
+        prices = data[self.base_feature]
+        future_return = prices.shift(-self.horizon) / prices - 1.0
+        return future_return
+
+
 class MeanReturnSignClassification:
     """Binary target based on the *sign* of the **mean** return over the next *horizon* periods.
 

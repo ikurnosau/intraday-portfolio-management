@@ -12,7 +12,7 @@ import numpy as np
 from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig, ObservabilityConfig
 from config.constants import Constants
 from data.processed.indicators import *
-from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification, FutureMeanReturnClassification, TripleClassification
+from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification, FutureMeanReturnClassification, TripleClassification, ReturnOverHorizon
 from data.processed.normalization import MinMaxNormalizer, ZScoreOverWindowNormalizer, MinMaxNormalizerOverWindow
 from data.processed.missing_values_handling import ForwardFillFlatBars, DummyMissingValuesHandler
 from core_data_prep.core_data_prep import ContinuousForwardFill
@@ -20,12 +20,14 @@ from modeling.models.tsa_classifier import TemporalSpatial
 from modeling.models.lstm import LSTMClassifier
 from modeling.models.mlp import MLP
 from modeling.models.tcn import TCN
+from modeling.models.tsa_allocator import TSAllocator
+from modeling.loss import position_return_loss
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
 
 frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Day)
 horizon = 30
-target = TripleClassification(horizon=horizon, base_feature='close')
+target = ReturnOverHorizon(horizon=horizon, base_feature='close')
 
 data_config = DataConfig(
     symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
@@ -94,7 +96,7 @@ data_config = DataConfig(
 
 
 model_config = ModelConfig(
-    model=TemporalSpatial(
+    model=TSAllocator(
         input_dim=len(data_config.features),
         output_dim=1,  # regression
         hidden_dim=64,
@@ -126,7 +128,7 @@ cur_optimizer = torch.optim.AdamW(
 )
 
 train_config = TrainConfig(
-    loss_fn=torch.nn.MSELoss(),
+    loss_fn=position_return_loss,
     optimizer=cur_optimizer,
     scheduler={
         "type": "OneCycleLR",
@@ -137,7 +139,7 @@ train_config = TrainConfig(
         "anneal_strategy": "cos",
         "cycle_momentum": False,
     },
-    metrics={"rmse": rmse_regression},
+    metrics={"position_return_loss": position_return_loss},
     num_epochs=20,
     early_stopping_patience=10,
 

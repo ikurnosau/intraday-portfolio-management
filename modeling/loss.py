@@ -30,3 +30,7 @@ def coral_loss(thresh_logits, targets, reduction='mean'):
         return loss_per_sample.sum()
     else:  # 'none'
         return loss_per_sample
+
+
+def position_return_loss(position: torch.Tensor, next_return: torch.Tensor):
+    return -(torch.log1p((position * next_return).sum(dim=-1))).mean()
