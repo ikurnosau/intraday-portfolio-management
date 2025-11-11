@@ -77,7 +77,7 @@ class ReturnOverHorizon:
     def __call__(self, data: pd.DataFrame) -> pd.Series:
         prices = data[self.base_feature]
         future_return = prices.shift(-self.horizon) / prices - 1.0
-        return future_return
+        return future_return.fillna(0)
 
 
 class MeanReturnSignClassification:
