@@ -8,154 +8,102 @@ from .base_actor import BaseActor
 from ...modeling_utils import smooth_abs
 
 
-class FullyConnectedBackend(nn.Module):
-    def __init__(self, 
-        n_assets: int,
-        hidden_dim: int = 128,
-        num_layers: int = 1,
-        dropout: float = 0.2,
-        use_layer_norm: bool = True
-    ): 
-        super().__init__()
-
-        layers: list[nn.Module] = []
-
-        in_features = n_assets * 3  # predictor output + position + spread
-        for i in range(num_layers):
-            layers.append(nn.Linear(in_features if i == 0 else hidden_dim, hidden_dim))
-
-            if use_layer_norm:
-                layers.append(nn.LayerNorm(hidden_dim))
-
-            layers.append(nn.ReLU())
-
-            if dropout > 0.0:
-                layers.append(nn.Dropout(dropout))
-
-        self.fc_shared = nn.Sequential(*layers)
-
-        # Final projection to the n_assets allocation vector
-        self.fc_out = nn.Linear(hidden_dim, n_assets)
-
-    def forward(self, features: torch.Tensor):
-        h = self.fc_shared(features)  # (B, hidden_dim)
-        # v = torch.tanh(self.fc_out(h))  # (B, n_assets)
-        v = self.fc_out(h)  # (B, n_assets)
-        return v
-
-
-class TransformerBackend(nn.Module):
-    def __init__(self,
-        d_model: int=64, 
-        nhead: int=4,
-        num_layers: int=1,
-        dropout: float = 0.2,
-        use_layer_norm: bool = True
-    ):
-        super().__init__()
-        self.d_model = d_model
-        self.dropout = dropout
-        self.use_layer_norm = use_layer_norm
-        
-        input_proj_layers = [nn.Linear(3, d_model)]
-        if use_layer_norm:
-            input_proj_layers.append(nn.LayerNorm(d_model))
-        input_proj_layers.append(nn.ReLU())
-        if dropout > 0.0:
-            input_proj_layers.append(nn.Dropout(dropout))
-        self.input_proj = nn.Sequential(*input_proj_layers)
-
-        # Transformer encoder block with dropout and norm
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=d_model,
-            nhead=nhead,
-            dropout=dropout,
-            batch_first=True,
-            norm_first=True  # more stable in practice
-        )
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-
-        # Output head: produces signed scalar per position in [-1, 1]
-        self.output_head = nn.Sequential(
-            nn.Dropout(dropout),
-            nn.Linear(d_model, 1)
-        )
-
-    def forward(self, features: torch.Tensor):
-        signal, position, vol_to_spread = torch.chunk(features, chunks=3, dim=1)
-
-        x = torch.stack([signal, position, vol_to_spread], dim=2)
-        x = self.input_proj(x)  # (batch, n_assets, d_model)
-        x = self.encoder(x)     # (batch, n_assets, d_model)
-        score = torch.tanh(self.output_head(x).squeeze(-1))  # (batch, n_assets)
-
-        return score
-
-
 class RlActor(nn.Module, BaseActor):
-    """Policy network mapping :class:`State` → portfolio allocation.
+    """Probabilistic policy mapping :class:`State` → (action, log_prob).
 
-    The allocation vector ``a`` (*) satisfies::
-
-        -1 ≤ aᵢ ≤ 1  and  Σ |aᵢ| = 1
+    The action *a* satisfies −1 ≤ aᵢ ≤ 1 and ∑|aᵢ| = 1.  Exploration is
+    achieved by sampling a sign vector from a Bernoulli distribution and
+    a magnitude vector from a Dirichlet distribution on the simplex.
     """
 
     def __init__(
         self,
         signal_predictor: nn.Module,
-        backend: nn.Module,
         n_assets: int,
+        *,
+        hidden_dim: int = 128,
+        num_layers: int = 1,
+        dropout: float = 0.2,
         train_signal_predictor: bool = False,
-        exploration_eps: float = 0.05,
     ):
         super().__init__()
-        self.signal_predictor = signal_predictor
-        self.backend = backend
-        self.n_assets = n_assets
-        self.exploration_eps = exploration_eps
 
-        # Freeze predictor parameters (assumed pre-trained)
+        self.signal_predictor = signal_predictor
+        self.n_assets = n_assets
         self.train_signal_predictor = train_signal_predictor
+
+        # ---- Freeze / unfreeze predictor parameters ----
         if not self.train_signal_predictor:
             for p in self.signal_predictor.parameters():
                 p.requires_grad = False
             self.signal_predictor.eval()
 
-        self.register_buffer("mu",  torch.cat([
-            torch.full((n_assets,), 0.50),    # predictor
-            torch.zeros(n_assets),            # position
-            torch.full((n_assets,), 4.29),    # vol/spread
-        ]))
-        self.register_buffer("sigma", torch.cat([
-            torch.full((n_assets,), 0.05),
-            torch.full((n_assets,), 0.577),   # √(1/3)
-            torch.full((n_assets,), 4.59),
-        ]))
+        # ---- Shared fully-connected backbone ----
+        layers: list[nn.Module] = []
+        in_features = n_assets * 3  # predictor output + position + vol/spread
+        for i in range(num_layers):
+            layers.append(nn.Linear(in_features if i == 0 else hidden_dim, hidden_dim))
+            layers.append(nn.LayerNorm(hidden_dim))
+            layers.append(nn.ReLU())
+            if dropout > 0.0:
+                layers.append(nn.Dropout(dropout))
+        self.fc_shared = nn.Sequential(*layers)
 
-    def forward(self, state: State):
-        if not self.train_signal_predictor:
-            with torch.no_grad():
-                signal_repr = self.signal_predictor(state.signal_features)  # (B, n_assets)
+        # ---- Policy heads ----
+        self.sign_head = nn.Linear(hidden_dim, n_assets)    # Bernoulli logits
+        self.weight_head = nn.Linear(hidden_dim, n_assets)  # Dirichlet (α)
+
+    # ---------------------------------------------------------------------
+    # Forward pass
+    # ---------------------------------------------------------------------
+    def forward(self, state: State, *, deterministic: bool = False):
+        # --- Encode predictor features ---
+        if self.train_signal_predictor:
+            signal_repr = self.signal_predictor(state.signal_features)
         else:
-            signal_repr = self.signal_predictor(state.signal_features)  # (B, n_assets)
+            with torch.no_grad():
+                signal_repr = self.signal_predictor(state.signal_features)
 
-        features = torch.cat([signal_repr, state.position, state.volatility / state.spread], dim=-1)
-        features = (features - self.mu) / (self.sigma + 1e-8)
-        v = self.backend(features)  # (B, n_assets)
+        # --- Compose and normalise feature vector ---
+        features = torch.cat(
+            [signal_repr, state.position, state.spread], dim=-1
+        )
 
-        if self.training and self.exploration_eps > 0.0:
-            noise = self.exploration_eps * torch.randn_like(v)
-            v = v + noise
+        h = self.fc_shared(features)  # (B, hidden_dim)
 
-        action = v / (smooth_abs(v).sum(dim=-1, keepdim=True) + 1e-8)
+        logits_sign = self.sign_head(h)            # (B, n_assets)
+        alpha_raw = self.weight_head(h)            # (B, n_assets)
+        alpha = torch.nn.functional.softplus(alpha_raw) + 1e-3  # αᵢ > 0
+        
+        bern_dist = torch.distributions.Bernoulli(logits=logits_sign)
+        dir_dist = torch.distributions.Dirichlet(alpha)
 
-        return action, torch.zeros_like(action)
+        if self.training and not deterministic:
+            sign_sample = bern_dist.sample()                 # (B, n_assets) in {0,1}
+            sign = 2.0 * sign_sample - 1.0                   # → {-1, +1}
+            weights = dir_dist.sample()                      # simplex, positive, sums to 1
+        else:
+            # Deterministic: use mode / mean estimates
+            sign = torch.where(torch.sigmoid(logits_sign) >= 0.5, 1.0, -1.0)
+            weights = alpha / alpha.sum(dim=-1, keepdim=True)
 
+        action = sign * weights                              # (B, n_assets)
+
+        # Normalise to ensure Σ|aᵢ| = 1 exactly (numerical safety)
+        action = action / (smooth_abs(action).sum(dim=-1, keepdim=True) + 1e-8)
+
+        # Log-probability of the joint sample
+        log_prob_sign = bern_dist.log_prob((sign + 1) / 2).sum(-1)  # (B,)
+        log_prob_weight = dir_dist.log_prob(weights)                # (B,)
+        log_prob = log_prob_sign + log_prob_weight                  # (B,)
+
+        return action, log_prob
+
+    # ------------------------------------------------------------------
+    # Keep predictor frozen in .train(False) mode
+    # ------------------------------------------------------------------
     def train(self, mode: bool = True):
-        """Override nn.Module.train to keep the frozen signal predictor in evaluation
-        mode while still letting the rest of the actor switch as normal."""
         super().train(mode)
-
         if not self.train_signal_predictor:
             self.signal_predictor.eval()
         return self

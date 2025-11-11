@@ -38,8 +38,8 @@ data_config = DataConfig(
 
     start=datetime(1970, 1, 2, tzinfo=Constants.Data.EASTERN_TZ),
     end=datetime(2019, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
-    train_set_last_date=datetime(2008, 1, 1, tzinfo=Constants.Data.EASTERN_TZ), 
-    val_set_last_date=datetime(2010, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    train_set_last_date=datetime(2012, 1, 1, tzinfo=Constants.Data.EASTERN_TZ), 
+    val_set_last_date=datetime(2014, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
 
     features={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------
