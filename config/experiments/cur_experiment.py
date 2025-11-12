@@ -21,7 +21,7 @@ from modeling.models.lstm import LSTMClassifier
 from modeling.models.mlp import MLP
 from modeling.models.tcn import TCN
 from modeling.models.tsa_allocator import TSAllocator
-from modeling.loss import position_return_loss
+from modeling.loss import position_return_loss, position_return_loss_with_entropy
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
 
@@ -106,8 +106,7 @@ model_config = ModelConfig(
         num_heads=4,
         use_spatial_attention=True,
         num_assets=len(data_config.symbol_or_symbols),
-        asset_embed_dim=0,
-        exploration_epsilon=0.2
+        asset_embed_dim=0
     ),
     # model=TCN(
     #     in_channels=len(data_config.features),
@@ -129,7 +128,7 @@ cur_optimizer = torch.optim.AdamW(
 )
 
 train_config = TrainConfig(
-    loss_fn=position_return_loss,
+    loss_fn=position_return_loss_with_entropy,
     optimizer=cur_optimizer,
     scheduler={
         "type": "OneCycleLR",
