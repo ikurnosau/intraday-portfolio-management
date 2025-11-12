@@ -1,4 +1,5 @@
 import torch
+import math
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler, OneCycleLR, ReduceLROnPlateau
@@ -104,10 +105,10 @@ class Trainer:
             logging.info(f"Val   Loss: {val_loss:.4f}")
             for name in val_metrics:
                 logging.info(f"Val   {name.capitalize()}: {val_metrics[name]:.4f}")
-            logging.info("")
 
             # Save model
             if val_loss < best_loss:
+                logging.info("New best model found! Updating best state dict.")
                 best_loss = val_loss
                 best_epoch = epoch
 
@@ -134,6 +135,8 @@ class Trainer:
             if epoch - best_epoch >= self.early_stopping_patience:
                 logging.info(f"Early stopping triggered at epoch {epoch}")
                 break
+                
+            logging.info("")
 
         # After all epochs complete, ensure that the model holds the best-performing weights
         if best_model_state is not None:
@@ -164,6 +167,12 @@ class Trainer:
 
             if isinstance(self.scheduler, OneCycleLR):
                 self.scheduler.step()
+
+            if math.isnan(loss.item()):
+                logging.warning('Loss is Nan!')
+                logging.info(f'Outputs:\n{outputs}')
+                logging.info(f'Targets:\n{targets}')
+                1 / 0
 
             total_loss += loss.item()
 

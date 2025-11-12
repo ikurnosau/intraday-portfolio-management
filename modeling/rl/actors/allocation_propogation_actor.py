@@ -8,7 +8,7 @@ from ..state import State
 from .base_actor import BaseActor
 
 
-class SignalPredictorActor(nn.Module, BaseActor):
+class AllocationPropogationActor(nn.Module, BaseActor):
     """
     Simple actor that uses a signal predictor to trade the most promising assets.
     """
@@ -41,6 +41,6 @@ class SignalPredictorActor(nn.Module, BaseActor):
         """Override nn.Module.train to keep the frozen signal predictor in evaluation
         mode while still letting the rest of the actor switch as normal."""
         super().train(mode)
-        if not self.train_signal_predictor:
-            self.signal_predictor.eval()
+        if not self.train_allocator:
+            self.allocator.eval()
         return self

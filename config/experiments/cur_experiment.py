@@ -21,7 +21,7 @@ from modeling.models.lstm import LSTMClassifier
 from modeling.models.mlp import MLP
 from modeling.models.tcn import TCN
 from modeling.models.tsa_allocator import TSAllocator
-from modeling.loss import position_return_loss, position_return_loss_with_entropy
+from modeling.loss import PositionReturnLoss, position_return_loss_with_entropy
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
 
@@ -99,12 +99,12 @@ model_config = ModelConfig(
     model=TSAllocator(
         input_dim=len(data_config.features),
         output_dim=1,  # regression
-        hidden_dim=128,
-        lstm_layers=4,
+        hidden_dim=64,
+        lstm_layers=2,
         bidirectional=True,
         dropout=0.2,
         num_heads=4,
-        use_spatial_attention=True,
+        use_spatial_attention=False,
         num_assets=len(data_config.symbol_or_symbols),
         asset_embed_dim=0
     ),
@@ -127,8 +127,9 @@ cur_optimizer = torch.optim.AdamW(
     amsgrad=True,
 )
 
+loss = PositionReturnLoss(fee=0.001)
 train_config = TrainConfig(
-    loss_fn=position_return_loss_with_entropy,
+    loss_fn=loss,
     optimizer=cur_optimizer,
     scheduler={
         "type": "OneCycleLR",
@@ -139,7 +140,7 @@ train_config = TrainConfig(
         "anneal_strategy": "cos",
         "cycle_momentum": False,
     },
-    metrics={"position_return_loss": position_return_loss},
+    metrics={"position_return_loss": loss},
     num_epochs=20,
     early_stopping_patience=10,
 

@@ -32,11 +32,15 @@ def coral_loss(thresh_logits, targets, reduction='mean'):
         return loss_per_sample
 
 
-def position_return_loss(position: torch.Tensor, next_return: torch.Tensor):
-    return -(torch.log1p((position * next_return).sum(dim=-1))).mean()
+class PositionReturnLoss: 
+    def __init__(self, fee=0.001): 
+        self.fee = fee
+
+    def __call__(self, position: torch.Tensor, next_return: torch.Tensor): 
+        return -torch.log1p((position * next_return).sum(dim=-1) - self.fee).mean()
 
 
-def position_return_loss_with_entropy(position: torch.Tensor, next_return: torch.Tensor, lambda_entropy: float = 0.01):
+def position_return_loss_with_entropy(position: torch.Tensor, next_return: torch.Tensor, lambda_entropy: float = 0.003):
     base_loss = -(torch.log1p((position * next_return).sum(dim=-1))).mean()
 
     p = position.abs() / (position.abs().sum(dim=-1, keepdim=True) + 1e-8)
