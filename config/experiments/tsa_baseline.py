@@ -12,7 +12,7 @@ import numpy as np
 from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig, ObservabilityConfig
 from config.constants import Constants
 from data.processed.indicators import *
-from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification, FutureMeanReturnClassification
+from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification, FutureMeanReturnClassification, TripleClassification, ReturnOverHorizon
 from data.processed.normalization import MinMaxNormalizer, ZScoreOverWindowNormalizer, MinMaxNormalizerOverWindow
 from data.processed.missing_values_handling import ForwardFillFlatBars, DummyMissingValuesHandler
 from core_data_prep.core_data_prep import ContinuousForwardFill
@@ -20,11 +20,14 @@ from modeling.models.tsa_classifier import TemporalSpatial
 from modeling.models.lstm import LSTMClassifier
 from modeling.models.mlp import MLP
 from modeling.models.tcn import TCN
+from modeling.models.tsa_allocator import TSAllocator
+from modeling.loss import PositionReturnLoss, position_return_loss_with_entropy
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
 
 frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Minute)
-target = FutureMeanReturnClassification(base_feature='close', horizon=1)
+horizon = 1
+target = TripleClassification(horizon=horizon, base_feature='close')
 
 data_config = DataConfig(
     symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
@@ -32,7 +35,7 @@ data_config = DataConfig(
 
     # start=datetime(2024, 6, 1, tzinfo=timezone.utc),
     # end=datetime(2025, 6, 1, tzinfo=timezone.utc),
-    # train_set_last_date=datetime(2025, 4, 1, tzinfo=timezone.utc), 
+    # train_set_last_date=datetime(2025, 4, 1, tzinfo=timezone.utc),
     # val_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
 
     start=datetime(2024, 9, 1, tzinfo=Constants.Data.EASTERN_TZ),
@@ -42,10 +45,10 @@ data_config = DataConfig(
 
     features={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------
-        "log_ret": lambda df: np.log(df['close'] / df['close'].shift(1)),
-        "hl_range": lambda df: (df['high'] - df['low']) / df['close'],
-        "close_open": lambda df: (df['close'] - df['open']) / df['open'],
-        "vol_delta": lambda df: np.log(df['volume'] / (df['volume'].shift(1) + 1e-8) + 1e-8),
+        "log_ret": lambda df: np.log((df['close'] + 1e-8) / (df['close'].shift(1) + 1e-8)).fillna(0.0),
+        "hl_range": lambda df: (df['high'] - df['low']) / (df['close'] + 1e-8),
+        "close_open": lambda df: (df['close'] - df['open']) / (df['open'] + 1e-8),
+        "vol_delta": lambda df: np.log((df['volume'] + 1e-8) / (df['volume'].shift(1) + 1e-8)).fillna(0.0),
 
         # --- Momentum & trend -----------------------------------------------------------------------
         "EMA_fast": EMA(3),              # fast EMA (≈ 3-min)
@@ -56,10 +59,10 @@ data_config = DataConfig(
         # "RSI12": RSI(12),
 
         # --- Volatility ----------------------------------------------------------------------------
-        "realvol20": lambda df: df['close'].pct_change().rolling(20).std().astype(np.float32),
+        "realvol20": lambda df: (df['close'] + 1e-8).pct_change().rolling(20).std().astype(np.float32).fillna(0.0),
 
         # --- Microstructure & order-flow -----------------------------------------------------------
-        "VWAP_dist": lambda df: (df['close'] - VWAP()(df)) / df['close'],
+        "VWAP_dist": lambda df: (df['close'] - VWAP()(df)) / (df['close'] + 1e-8),
         "loc_in_range": lambda df: (df['close'] - df['low']) / (df['high'] - df['low'] + 1e-8),
 
         # --- Time-of-day cyclic encodings -----------------------------------------------------------
@@ -68,19 +71,18 @@ data_config = DataConfig(
 
         # --- Derived features ----------------------------------------------------------------------
         "ema_slope": lambda df: EMA(3)(df) - EMA(15)(df),     # or ratio
-        "vol_slope": lambda df: df['close'].pct_change()
+        "vol_slope": lambda df: ((df['close'] + 1e-8).pct_change()
                              .rolling(10).std()
-                             / (df['close'].pct_change().rolling(20).std() + 1e-8),
+                             / ((df['close'] + 1e-8).pct_change().rolling(20).std() + 1e-8)).fillna(0.0),
 
         "is_missing": lambda df: df['is_missing'],
     },
 
     statistics={
-        "next_return": lambda df: df[getattr(target, 'base_feature', 'close')].pct_change()\
-            .shift(-1).astype(np.float32),
+        "next_return": lambda df: (df['close'].shift(-horizon) / df['close'] - 1.0).fillna(0.0).astype(np.float32),
         "volatility": lambda df: df[getattr(target, 'base_feature', 'close')].pct_change().astype(np.float32)\
             .rolling(window=10).std().fillna(0.0).astype(np.float32),
-        "spread": lambda df: (df['ask_price'] - df['bid_price']) / df['ask_price'],
+        "spread": lambda df: (df['ask_price'] - df['bid_price']) / (df['ask_price'] + 1e-8),
     },
     
     target=target,
@@ -88,13 +90,8 @@ data_config = DataConfig(
     missing_values_handler=ContinuousForwardFill(frequency=str(frequency)),
 
     in_seq_len=60,
+    horizon=horizon,
     multi_asset_prediction=True,
-
-    cutoff_time=(datetime.combine(
-        datetime.today(), 
-        Constants.Data.REGULAR_TRADING_HOURS_START
-    ) + timedelta(minutes=30)) \
-        .time(),
 )
 
 
