@@ -22,6 +22,7 @@ from modeling.models.mlp import MLP
 from modeling.models.tcn import TCN
 from modeling.models.tsa_allocator import TSAllocator
 from modeling.models.tcn import TCNPredictor
+from modeling.models.tst import TimeSeriesTransformer
 from modeling.loss import PositionReturnLoss, position_return_loss_with_entropy
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
@@ -97,14 +98,13 @@ data_config = DataConfig(
 
 
 model_config = ModelConfig(
-    model=TCNPredictor(
-        num_inputs=len(data_config.features),
-        num_channels=[64, 64, 64, 64, 64],
-        output_dim=1,
-        kernel_size=5,
+    model=TimeSeriesTransformer(
+        hidden_dim=64,
+        num_heads=4,
+        num_layers=2,
+        seq_len=data_config.in_seq_len,
+        feat_dim=len(data_config.features),
         dropout=0.2,
-        use_norm='weight_norm',
-        use_skip_connections=True,
     ),
     registered_model_name="TemporalSpatial Regressor",
 )

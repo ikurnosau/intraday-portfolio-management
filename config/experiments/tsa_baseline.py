@@ -19,8 +19,9 @@ from core_data_prep.core_data_prep import ContinuousForwardFill
 from modeling.models.tsa_classifier import TemporalSpatial
 from modeling.models.lstm import LSTMClassifier
 from modeling.models.mlp import MLP
-from modeling.models.tcn import TCN
+# from modeling.models.tcn import TCN
 from modeling.models.tsa_allocator import TSAllocator
+# from modeling.models.tcn import TCNPredictor
 from modeling.loss import PositionReturnLoss, position_return_loss_with_entropy
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
@@ -108,15 +109,6 @@ model_config = ModelConfig(
         num_assets=len(data_config.symbol_or_symbols),
         asset_embed_dim=16,
     ),
-    # model=TCN(
-    #     in_channels=len(data_config.features),
-    #     hidden_channels=128,
-    #     kernel_size=2,
-    #     num_layers=6,
-    #     output_dim=1,
-    #     use_layer_norm=True,
-    #     dropout=0.2,
-    # ),
     registered_model_name="TemporalSpatial Regressor",
 )
 
