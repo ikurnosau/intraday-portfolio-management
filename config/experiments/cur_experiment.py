@@ -21,13 +21,14 @@ from modeling.models.lstm import LSTMClassifier
 from modeling.models.mlp import MLP
 from modeling.models.tcn import TCN
 from modeling.models.tsa_allocator import TSAllocator
+from modeling.models.tcn import TCNPredictor
 from modeling.loss import PositionReturnLoss, position_return_loss_with_entropy
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 
 
 frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Day)
 horizon = 30
-target = ReturnOverHorizon(horizon=horizon, base_feature='close')
+target = TripleClassification(horizon=horizon, base_feature='close')
 
 data_config = DataConfig(
     symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
@@ -89,34 +90,22 @@ data_config = DataConfig(
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
     missing_values_handler=ContinuousForwardFill(frequency=str(frequency)),
 
-    in_seq_len=30,
+    in_seq_len=80,
     horizon=horizon,
     multi_asset_prediction=True,
 )
 
 
 model_config = ModelConfig(
-    model=TSAllocator(
-        input_dim=len(data_config.features),
-        output_dim=1,  # regression
-        hidden_dim=64,
-        lstm_layers=2,
-        bidirectional=True,
+    model=TCNPredictor(
+        num_inputs=len(data_config.features),
+        num_channels=[64, 64, 64, 64, 64],
+        output_dim=1,
+        kernel_size=5,
         dropout=0.2,
-        num_heads=4,
-        use_spatial_attention=False,
-        num_assets=len(data_config.symbol_or_symbols),
-        asset_embed_dim=0
+        use_norm='weight_norm',
+        use_skip_connections=True,
     ),
-    # model=TCN(
-    #     in_channels=len(data_config.features),
-    #     hidden_channels=128,
-    #     kernel_size=2,
-    #     num_layers=6,
-    #     output_dim=1,
-    #     use_layer_norm=True,
-    #     dropout=0.2,
-    # ),
     registered_model_name="TemporalSpatial Regressor",
 )
 
@@ -127,9 +116,8 @@ cur_optimizer = torch.optim.AdamW(
     amsgrad=True,
 )
 
-loss = PositionReturnLoss(fee=0.001)
 train_config = TrainConfig(
-    loss_fn=loss,
+    loss_fn=torch.nn.MSELoss(),
     optimizer=cur_optimizer,
     scheduler={
         "type": "OneCycleLR",
@@ -140,7 +128,7 @@ train_config = TrainConfig(
         "anneal_strategy": "cos",
         "cycle_momentum": False,
     },
-    metrics={"position_return_loss": loss},
+    metrics={"rmse": rmse_regression},
     num_epochs=20,
     early_stopping_patience=10,
 

@@ -151,6 +151,7 @@ class SAGCN(nn.Module):
 
     def forward(self, X):
         X = X.permute(0, 3, 1, 2)  # [batch, feature, stocks, length]
+        
         in_len = X.shape[3]
         if in_len < self.receptive_field:
             x = nn.functional.pad(X, (self.receptive_field - in_len, 0, 0, 0))
