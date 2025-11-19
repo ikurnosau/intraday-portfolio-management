@@ -2,6 +2,12 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 
+import threadpoolctl
+os.environ["OMP_NUM_THREADS"]  = "1"
+os.environ["MKL_NUM_THREADS"]  = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+threadpoolctl.threadpool_limits(1)
+
 import pandas as pd
 import copy
 from typing import Callable, Tuple
@@ -26,21 +32,25 @@ class DataPreparer:
                  frequency: str,
                  validator: Validator|None=None,
                  date_column: str = 'date',
-                 backend: str = 'loky'):
+                 raw_features_backend: str = 'threading',
+                 transform_data_for_inference_backend: str = 'loky'):
         self.normalizer = normalizer
         self.missing_values_handler = missing_values_handler
         self.in_seq_len = in_seq_len
         self.date_column = date_column
         self.frequency = frequency
         self.validator = validator
-        self.backend = backend
 
-    def _generate_raw_features(self, 
+        self.raw_features_backend = raw_features_backend
+        self.transform_data_for_inference_backend = transform_data_for_inference_backend
+
+    def _generate_raw_features(self,
                             data: dict[str, pd.DataFrame], 
                             features: dict[str, Callable],
-                            n_jobs: int=os.cpu_count() // 2
+                            n_jobs: int=os.cpu_count() // 2,
+                            batch_size: int=4
                             ) -> dict[str, pd.DataFrame]:
-        return dict(sorted(Parallel(n_jobs=n_jobs, backend=self.backend)(
+        return dict(sorted(Parallel(n_jobs=n_jobs, backend=self.raw_features_backend, batch_size=batch_size)(
             delayed(self._raw_features_for_df)(asset_name, asset_df, features) \
                 for asset_name, asset_df in data.items()), key=lambda x: x[0])
         )
@@ -202,7 +212,11 @@ class DataPreparer:
 
         train_val_test_data = []
         for slices in (train_slices, val_slices, test_slices):
-            list_of_x_y_statistics: list[tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]] = Parallel(n_jobs=n_jobs, backend=self.backend)(
+            list_of_x_y_statistics: list[tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]] = Parallel(
+                n_jobs=n_jobs,
+                backend=self.transform_data_for_inference_backend, 
+                batch_size=8
+            )(
                 delayed(self.transform_data_for_inference)(
                     cur_slice,
                     n_timestamps=n_timestamps,
@@ -210,7 +224,7 @@ class DataPreparer:
                     include_target_and_statistics=True,
                     per_asset_target=per_asset_target,
                     statistics=statistics,
-                    n_jobs=1
+                    n_jobs=os.cpu_count() // 4
                 )
                 for cur_slice in slices
             )
