@@ -8,6 +8,9 @@ from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from datetime import datetime, timedelta
 import torch
 import numpy as np
+import polars as pl
+import math
+from data.processed.indicators_polars import EMA as EMA_pl, RSI as RSI_pl, VWAP as VWAP_pl
 
 from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig, ObservabilityConfig
 from config.constants import Constants
@@ -15,7 +18,7 @@ from data.processed.indicators import *
 from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification, FutureMeanReturnClassification, TripleClassification, ReturnOverHorizon
 from data.processed.normalization import MinMaxNormalizer, ZScoreOverWindowNormalizer, MinMaxNormalizerOverWindow
 from data.processed.missing_values_handling import ForwardFillFlatBars, DummyMissingValuesHandler
-from core_data_prep.core_data_prep import ContinuousForwardFill
+from core_data_prep.core_data_prep import ContinuousForwardFill, ContinuousForwardFillPolars
 from modeling.models.tsa_classifier import TemporalSpatial
 from modeling.models.lstm import LSTMClassifier
 from modeling.models.mlp import MLP
@@ -80,6 +83,43 @@ data_config = DataConfig(
         "is_missing": lambda df: df['is_missing'],
     },
 
+    features_polars={
+        # --- Raw micro-price & volume dynamics ------------------------------------------------------
+        "log_ret": lambda lf: (((pl.col("close") + 1e-8) / (pl.col("close").shift(1) + 1e-8)).log()).fill_null(0.0),
+        "hl_range": lambda lf: (pl.col("high") - pl.col("low")) / (pl.col("close") + 1e-8),
+        "close_open": lambda lf: (pl.col("close") - pl.col("open")) / (pl.col("open") + 1e-8),
+        "vol_delta": lambda lf: (((pl.col("volume") + 1e-8) / (pl.col("volume").shift(1) + 1e-8)).log()).fill_null(0.0),
+
+        # --- Momentum & trend -----------------------------------------------------------------------
+        "EMA_fast": EMA_pl(3),              # fast EMA (≈ 3-min)
+        "EMA_slow": EMA_pl(30),            # slow EMA adjusted for 60-bar window
+        "RSI2": RSI_pl(2),
+        "RSI6": RSI_pl(6),
+        # Optionally uncomment to add a slow oscillator now that the window is 60
+        # "RSI12": RSI_pl(12),
+
+        # --- Volatility ----------------------------------------------------------------------------
+        "realvol20": lambda lf: (pl.col("close") + 1e-8).pct_change().rolling_std(window_size=20).fill_null(0.0),
+
+        # --- Microstructure & order-flow -----------------------------------------------------------
+        "VWAP_dist": lambda lf: (pl.col("close") - VWAP_pl()(lf)) / (pl.col("close") + 1e-8),
+        "loc_in_range": lambda lf: (pl.col("close") - pl.col("low")) / (pl.col("high") - pl.col("low") + 1e-8),
+
+        # --- Time-of-day cyclic encodings -----------------------------------------------------------
+        "tod_sin": lambda lf: (((pl.col("date").dt.hour() * 60 + pl.col("date").dt.minute()).cast(pl.Float32) * (2 * math.pi) / (6.5 * 60)).sin()) - 0.19212672,
+        "tod_cos": lambda lf: (((pl.col("date").dt.hour() * 60 + pl.col("date").dt.minute()).cast(pl.Float32) * (2 * math.pi) / (6.5 * 60)).cos()) + 0.018629849,
+
+        # --- Derived features ----------------------------------------------------------------------
+        "ema_slope": lambda lf: EMA_pl(3)(lf) - EMA_pl(15)(lf),     # or ratio
+        "vol_slope": lambda lf: (
+            (pl.col("close") + 1e-8).pct_change().rolling_std(window_size=10) / (
+                (pl.col("close") + 1e-8).pct_change().rolling_std(window_size=20) + 1e-8
+            )
+        ).fill_null(0.0),
+
+        "is_missing": lambda lf: pl.col("is_missing"),
+    },
+
     statistics={
         "next_return": lambda df: (df['close'].shift(-horizon) / df['close'] - 1.0).fillna(0.0).astype(np.float32),
         "volatility": lambda df: df[getattr(target, 'base_feature', 'close')].pct_change().astype(np.float32)\
@@ -90,6 +130,7 @@ data_config = DataConfig(
     target=target,
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
     missing_values_handler=ContinuousForwardFill(frequency=str(frequency)),
+    missing_values_handler_polars=ContinuousForwardFillPolars(frequency=str(frequency)),
 
     in_seq_len=80,
     horizon=horizon,

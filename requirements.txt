@@ -9,3 +9,4 @@ blinker>=1.4
 gdown
 matplotlib
 pytorch-tcn
+polars

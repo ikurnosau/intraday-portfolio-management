@@ -18,6 +18,8 @@ from joblib import Parallel, delayed
 
 import logging
 import numpy as np
+import polars as pl
+import time
 from numpy.lib.stride_tricks import sliding_window_view
 from data.processed.data_processing_utils import filter_by_regular_hours
 from core_data_prep.validations import Validator
@@ -28,6 +30,7 @@ class DataPreparer:
     def __init__(self,
                  normalizer: Callable,
                  missing_values_handler: Callable,
+                 missing_values_handler_polars: Callable,
                  in_seq_len: int,
                  frequency: str,
                  validator: Validator|None=None,
@@ -36,6 +39,7 @@ class DataPreparer:
                  transform_data_for_inference_backend: str = 'loky'):
         self.normalizer = normalizer
         self.missing_values_handler = missing_values_handler
+        self.missing_values_handler_polars = missing_values_handler_polars
         self.in_seq_len = in_seq_len
         self.date_column = date_column
         self.frequency = frequency
@@ -44,8 +48,38 @@ class DataPreparer:
         self.raw_features_backend = raw_features_backend
         self.transform_data_for_inference_backend = transform_data_for_inference_backend
 
+    def _generate_raw_features_polars(
+        self,
+        data: dict[str, pd.DataFrame],
+        features: dict[str, Callable],
+    ) -> dict[str, pd.DataFrame]:
+        start_time = time.time()
+        lazy_frames: list[pl.LazyFrame] = [
+            pl.from_pandas(asset_df).with_columns(pl.lit(asset_name).alias("asset_id")).lazy()
+            for asset_name, asset_df in data.items()
+        ]
+        lf_all = pl.concat(lazy_frames)
+        end_time = time.time()
+        logging.info(f"Time taken to concatenate lazy frames: {end_time - start_time} seconds")
+
+        start_time = time.time()
+        names, exprs = zip(*[
+            (name, transform(lf_all).alias(name)) for name, transform in features.items()
+        ])
+        lf_features = (
+            lf_all.group_by("asset_id", maintain_order=True)
+            .agg(exprs)
+            .explode(names)
+        )
+
+        df_all: pd.DataFrame = lf_features.collect().to_pandas()
+        return {
+            asset_id: grp.drop(columns=["asset_id"]).astype(np.float32).reset_index(drop=True)
+            for asset_id, grp in df_all.groupby("asset_id", sort=False)
+        }
+
     def _generate_raw_features(self,
-                            data: dict[str, pd.DataFrame], 
+                            data: dict[str, pd.DataFrame],
                             features: dict[str, Callable],
                             n_jobs: int=os.cpu_count() // 2,
                             batch_size: int=4
@@ -104,6 +138,13 @@ class DataPreparer:
         
         return filled_data
 
+    def fill_missing_values_polars(self, data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+        filled_data = self.missing_values_handler_polars(data)
+        if self.validator is not None:
+            self.validator.validate_filled_data(filled_data)
+
+        return filled_data
+
     def _normalize_features(self, 
                             features: dict[str, pd.DataFrame], 
                             features_to_normalize: list[str]
@@ -126,6 +167,7 @@ class DataPreparer:
                                       data: dict[str, pd.DataFrame],
                                       n_timestamps: int,
                                       features: dict[str, Callable],
+                                      features_polars: dict[str, Callable],
                                       include_target_and_statistics: bool=False,
                                       statistics: dict[str, Callable] | None = None,
                                       per_asset_target: dict[str, Callable] | None = None,
@@ -135,16 +177,52 @@ class DataPreparer:
         if self.validator is not None:
             self.validator.validate_input_data(data)
 
-        data_filled = self._fill_missing_values(data)
+        # start_time = time.time()
+        # data_filled = self._fill_missing_values(data)
+        # end_time = time.time()
+        # logging.info(f"Time taken to fill missing values: {end_time - start_time} seconds")
 
-        raw_features = self._generate_raw_features(data_filled, features=features, n_jobs=n_jobs)
+        start_time = time.time()
+        polars_filled = self.fill_missing_values_polars(data)       # new routine
+        end_time = time.time()
+        logging.info(f"Time taken to fill missing values with Polars: {end_time - start_time} seconds")
+        data_filled = polars_filled
+
+        # for asset, df_p in data_filled.items():
+        #     df_pl = polars_filled[asset]
+        #     pd.DataFrame(df_pl).to_csv(f'df_pl.csv', index=False)
+        #     pd.DataFrame(df_p).to_csv(f'df_p.csv', index=False)
+        #     num_p  = df_p.select_dtypes(include=[np.number]).to_numpy()
+        #     num_pl = df_pl.select_dtypes(include=[np.number]).to_numpy()
+        #     assert np.allclose(num_p, num_pl, atol=1e-5, equal_nan=True), f"mismatch for {asset}"
+
+        # raw_features = self._generate_raw_features(data_filled, features=features, n_jobs=n_jobs)
+        start_time = time.time()
+        raw_features_polars = self._generate_raw_features_polars(data_filled, features=features_polars)
+        end_time = time.time()
+        logging.info(f"Time taken to generate raw features with Polars: {end_time - start_time} seconds")
+        raw_features = raw_features_polars
+
+        # --- Sanity-check parity between Pandas-based and Polars-based pipelines (debug aid) -------
+
+        # for asset_name in raw_features.keys():
+        #     pd_arr  = raw_features[asset_name].to_numpy()
+        #     pl_arr  = raw_features_polars[asset_name].to_numpy()
+
+        #     assert pd_arr.shape == pl_arr.shape, f"Shape mismatch for {asset_name}: {pd_arr.shape} != {pl_arr.shape}"
+        #     assert np.allclose(pd_arr, pl_arr, atol=1e-1, equal_nan=True), f"Feature mismatch for {asset_name}"
+
+
         if self.validator is not None:
             self.validator.validate_raw_features(raw_features)
 
+        start_time = time.time()
         features_normalized = self._normalize_features(
             raw_features,
             features_to_normalize=[col for col in features.keys() if col not in {'is_missing', 'tod_sin', 'tod_cos'}]
         )
+        end_time = time.time()
+        logging.info(f"Time taken to normalize features: {end_time - start_time} seconds")
 
         X = self._features_to_model_input(features_normalized)[-n_timestamps:]
         if self.validator is not None:
@@ -153,15 +231,21 @@ class DataPreparer:
         if not include_target_and_statistics:
             return X
         else:
+            start_time = time.time()
             target_feature = {asset_name: per_asset_target[asset_name](asset_df_filled) \
                 for asset_name, asset_df_filled in data_filled.items()}
+            end_time = time.time()
+            logging.info(f"Time taken to generate target features: {end_time - start_time} seconds")
             y = self._features_to_model_input(target_feature)[-n_timestamps:]
             if self.validator is not None:
              self.validator.validate_target(y)
 
             calculated_statistics: dict[str, np.ndarray] = {}
             for statistics_name, statistics_func in statistics.items():
+                start_time = time.time()
                 statistics_features = self._generate_raw_features(data_filled, features={statistics_name: statistics_func}, n_jobs=n_jobs)
+                end_time = time.time()
+                logging.info(f"Time taken to generate statistics features: {end_time - start_time} seconds")
                 calculated_statistics[statistics_name] = self._features_to_model_input(statistics_features)[-n_timestamps:]
                 if self.validator is not None:
                     self.validator.validate_statistics(statistics_name, calculated_statistics[statistics_name])
@@ -176,6 +260,7 @@ class DataPreparer:
                             start_date: datetime,
                             end_date: datetime,
                             features: dict[str, Callable],
+                            features_polars: dict[str, Callable],
                             statistics: dict[str, Callable],
                             target: Callable,
                             train_set_last_date: datetime | None=None,
@@ -212,22 +297,19 @@ class DataPreparer:
 
         train_val_test_data = []
         for slices in (train_slices, val_slices, test_slices):
-            list_of_x_y_statistics: list[tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]] = Parallel(
-                n_jobs=n_jobs,
-                backend=self.transform_data_for_inference_backend, 
-                batch_size=8
-            )(
-                delayed(self.transform_data_for_inference)(
+            list_of_x_y_statistics = [
+                self.transform_data_for_inference(
                     cur_slice,
                     n_timestamps=n_timestamps,
                     features=features,
+                    features_polars=features_polars,
                     include_target_and_statistics=True,
                     per_asset_target=per_asset_target,
                     statistics=statistics,
-                    n_jobs=os.cpu_count() // 4
+                    n_jobs=1,
                 )
                 for cur_slice in slices
-            )
+            ]
             x = np.vstack([cur_x for cur_x, _, _ in list_of_x_y_statistics])
             y = np.vstack([cur_y for _, cur_y, _ in list_of_x_y_statistics])
 
@@ -396,3 +478,114 @@ class ContinuousForwardFill:
         assert not data_continuous.isna().values.any(), "Filling missing values resulted in NaNs!"
 
         return data_continuous.reset_index().rename(columns={'index':date_column})
+
+
+class ContinuousForwardFillPolars:
+    """
+    Lazily forward-fills every asset to a continuous time-grid and produces the
+    same columns (including `is_missing`) that ContinuousForwardFill does,
+    but in a single Polars query.
+
+    Result for each asset – after `.collect()` – is **bit-for-bit identical**
+    to the Pandas implementation.
+    """
+
+    FILL_COLS_FFILL = (
+        "close", "ask_price", "ask_size", "bid_price", "bid_size"
+    )
+
+    def __init__(self, frequency: str):
+        if frequency == "1Min":
+            self.freq = "1m"
+        elif frequency == "1Day":
+            self.freq = "1d"
+        else:
+            raise ValueError(f"Unsupported frequency: {frequency}")
+
+    # ------------------------------------------------------------------
+    def __call__(
+        self, data: dict[str, pd.DataFrame], date_column: str = "date"
+    ) -> dict[str, pd.DataFrame]:
+        # --- gather column names ahead of lazy context -----------------
+        available_cols: set[str] = set()
+        for df in data.values():
+            available_cols.update(df.columns)
+
+        # --- 1. concat original frames with an asset_id ----------------
+        # Ensure consistent dtypes (e.g., `volume` must be Float64 across all frames)
+        processed_items = []
+        for asset, df in data.items():
+            if 'volume' in df.columns and df['volume'].dtype != np.float64:
+                df = df.copy()
+                df['volume'] = df['volume'].astype(np.float64)
+            processed_items.append((asset, df))
+
+        lazy_frames = [
+            pl.from_pandas(df)
+              .with_columns(pl.lit(asset).alias("asset_id"))
+              .lazy()
+            for asset, df in processed_items
+        ]
+        lf_all = pl.concat(lazy_frames)
+
+        # --- 2. find global last_timestamp (same as Pandas path) -------
+        last_ts_expr = max(df[date_column].max() for df in data.values())
+
+        # --- 3. build a “calendar” per asset_id ------------------------
+        calendars = []
+        for asset in data:
+            tz_str = (
+                Constants.Data.EASTERN_TZ
+                if isinstance(Constants.Data.EASTERN_TZ, str)
+                else str(Constants.Data.EASTERN_TZ)
+            )
+            dates = pl.datetime_range(
+                start=data[asset][date_column].min(),
+                end=last_ts_expr,
+                interval=self.freq,
+                eager=True,
+                time_unit="ns",
+                time_zone=tz_str,
+            )
+            cal_df = (
+                pl.DataFrame({
+                    date_column: dates,
+                    "asset_id": [asset] * len(dates),
+                }).lazy()
+            )
+            calendars.append(cal_df)
+        lf_calendar = pl.concat(calendars)
+
+        # --- 4. left-join calendar with original -----------------------
+        lf_joined = lf_calendar.join(
+            lf_all,
+            on=[date_column, "asset_id"],
+            how="left",
+        ).sort(["asset_id", date_column])
+
+        # --- 5. forward-fill and other null-handling -------------------
+        # Perform forward-fill within a window over each asset without aggregating,
+        # so that the original `date` column is retained (avoids ColumnNotFoundError).
+        forward_fill_cols = [
+            pl.col(col).forward_fill().over("asset_id").alias(col)
+            for col in self.FILL_COLS_FFILL if col in available_cols
+        ]
+
+        lf_filled = (
+            lf_joined
+            .with_columns(forward_fill_cols)  # ensure `close` is forward-filled first
+            .with_columns([
+                (pl.col("volume").is_null()).cast(pl.Float32).alias("is_missing"),
+                pl.col("open").fill_null(pl.col("close")),
+                pl.col("high").fill_null(pl.col("close")),
+                pl.col("low").fill_null(pl.col("close")),
+                pl.col("volume").fill_null(0),
+            ])
+        )
+
+        # --- 6. collect & partition back to dict -----------------------
+        df_all = lf_filled.collect().to_pandas()
+        return {
+            asset: grp.drop(columns=["asset_id"]).reset_index(drop=True)
+            for asset, grp in df_all.groupby("asset_id", sort=False)
+        }

@@ -159,6 +159,10 @@ class Validator:
 
     @staticmethod
     def _ensure_no_nan_inf(df: pd.DataFrame, context: str = "") -> None:
+        for col in df.columns:
+            assert not df[col].isna().any(), f"NaNs detected in {context} for column {col}"
+            if df[col].isin([np.inf, -np.inf]).any():
+                logging.warning(f"Infs detected in {context} for column {col}")
         assert not df.isna().any().any(), f"NaNs detected in {context}"
         assert not df.isin([np.inf, -np.inf]).any().any(), f"Infs detected in {context}"
 
