@@ -49,10 +49,10 @@ class TrainConfig:
 
     # --- hardware / runtime ------------------------------------------------
     device: torch.device
-    cudnn_benchmark: bool = False  # enable cuDNN autotuner for fixed shapes
+    cudnn_benchmark: bool
 
     # --- metric callbacks ---------------------------------------------------
-    metrics: dict[str, Callable] | None = None
+    metrics: dict[str, Callable] | None
 
     # --- DataLoader parameters ---------------------------------------------
     batch_size: int

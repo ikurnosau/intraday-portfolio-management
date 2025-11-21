@@ -105,7 +105,7 @@ data_config = DataConfig(
     horizon=horizon,
     multi_asset_prediction=True,
 
-    validator=Validator(),
+    validator=None, #Validator(),
 )
 
 
