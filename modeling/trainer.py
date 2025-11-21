@@ -35,6 +35,20 @@ class Trainer:
         self.device = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
         self.model.to(self.device)
 
+        # Automatic Mixed Precision (AMP)
+        self.use_amp = self.device.type == "cuda"
+        self.scaler = torch.amp.GradScaler('cuda', enabled=self.use_amp)
+        # ---------------------------------------------
+        # Optional Torch 2.0 ahead-of-time compilation
+        # ---------------------------------------------
+        try:
+            if hasattr(torch, "compile") and self.device.type == "cuda":
+                # `mode="reduce-overhead"` is the safest default for training
+                self.model = torch.compile(self.model, mode="reduce-overhead")  # type: ignore[attr-defined]
+                logging.info("Model compiled with torch.compile()")
+        except Exception as e:  # pragma: no cover – compilation is optional
+            logging.warning(f"torch.compile failed – falling back to eager: {e}")
+
         # ------------------------------------------------------------------
         # Multi-GPU support: automatically wrap in DataParallel when >1 GPU
         # ------------------------------------------------------------------
@@ -158,12 +172,17 @@ class Trainer:
             inputs, targets = inputs.to(self.device, non_blocking=True), targets.to(self.device, non_blocking=True)
             self.optimizer.zero_grad()
 
-            outputs = self.model(inputs)
-            loss = self.loss_fn(outputs, targets)
-            loss.backward()
-            # Clip gradients to prevent exploding gradients and stabilize training
+            with torch.amp.autocast(device_type="cuda", enabled=self.use_amp):
+                outputs = self.model(inputs)
+                loss = self.loss_fn(outputs, targets)
+
+            self.scaler.scale(loss).backward()
+            # Clip gradients (unscaled) – call before scaler.step
+            self.scaler.unscale_(self.optimizer)
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-            self.optimizer.step()
+
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
 
             if isinstance(self.scheduler, OneCycleLR):
                 self.scheduler.step()
@@ -180,10 +199,6 @@ class Trainer:
                 for name, fn in self.metrics.items():
                     total_metrics[name] += fn(outputs, targets)
 
-        for m in self.model.modules():
-            if isinstance(m, torch.nn.BatchNorm1d):
-                print("BN momentum:", m.momentum)
-
         epoch_loss = total_loss / num_batches
         epoch_metrics = {name: total_metrics[name] / num_batches for name in total_metrics}
         return epoch_loss, epoch_metrics
@@ -198,8 +213,9 @@ class Trainer:
         with torch.no_grad():
             for inputs, targets in tqdm(self.val_loader, desc="Evaluating", leave=False):
                 inputs, targets = inputs.to(self.device, non_blocking=True), targets.to(self.device, non_blocking=True)
-                outputs = self.model(inputs)
-                loss = self.loss_fn(outputs, targets)
+                with torch.amp.autocast(device_type="cuda", enabled=self.use_amp):
+                    outputs = self.model(inputs)
+                    loss = self.loss_fn(outputs, targets)
 
                 total_loss += loss.item()
 
