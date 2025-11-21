@@ -1,4 +1,6 @@
 import pandas as pd
+import polars as pl
+import numpy as np
 import logging
 
 from config.constants import Constants
@@ -89,3 +91,113 @@ class ForwardFillFlatBars:
 
         full_idx = pd.date_range(start=start, end=end, freq=freq)
         return day_slice.reindex(full_idx)
+
+class ContinuousForwardFillPolars:
+    """
+    Lazily forward-fills every asset to a continuous time-grid and produces the
+    same columns (including `is_missing`) that ContinuousForwardFill does,
+    but in a single Polars query.
+
+    Result for each asset – after `.collect()` – is **bit-for-bit identical**
+    to the Pandas implementation.
+    """
+
+    FILL_COLS_FFILL = (
+        "close", "ask_price", "ask_size", "bid_price", "bid_size"
+    )
+
+    def __init__(self, frequency: str):
+        if frequency == "1Min":
+            self.freq = "1m"
+        elif frequency == "1Day":
+            self.freq = "1d"
+        else:
+            raise ValueError(f"Unsupported frequency: {frequency}")
+
+    # ------------------------------------------------------------------
+    def __call__(
+        self, data: dict[str, pd.DataFrame], date_column: str = "date"
+    ) -> dict[str, pd.DataFrame]:
+        # --- gather column names ahead of lazy context -----------------
+        available_cols: set[str] = set()
+        for df in data.values():
+            available_cols.update(df.columns)
+
+        # --- 1. concat original frames with an asset_id ----------------
+        # Ensure consistent dtypes (e.g., `volume` must be Float64 across all frames)
+        processed_items = []
+        for asset, df in data.items():
+            if 'volume' in df.columns and df['volume'].dtype != np.float64:
+                df = df.copy()
+                df['volume'] = df['volume'].astype(np.float64)
+            processed_items.append((asset, df))
+
+        lazy_frames = [
+            pl.from_pandas(df)
+              .with_columns(pl.lit(asset).alias("asset_id"))
+              .lazy()
+            for asset, df in processed_items
+        ]
+        lf_all = pl.concat(lazy_frames)
+
+        # --- 2. find global last_timestamp (same as Pandas path) -------
+        last_ts_expr = max(df[date_column].max() for df in data.values())
+
+        # --- 3. build a “calendar” per asset_id ------------------------
+        calendars = []
+        for asset in data:
+            tz_str = (
+                Constants.Data.EASTERN_TZ
+                if isinstance(Constants.Data.EASTERN_TZ, str)
+                else str(Constants.Data.EASTERN_TZ)
+            )
+            dates = pl.datetime_range(
+                start=data[asset][date_column].min(),
+                end=last_ts_expr,
+                interval=self.freq,
+                eager=True,
+                time_unit="ns",
+                time_zone=tz_str,
+            )
+            cal_df = (
+                pl.DataFrame({
+                    date_column: dates,
+                    "asset_id": [asset] * len(dates),
+                }).lazy()
+            )
+            calendars.append(cal_df)
+        lf_calendar = pl.concat(calendars)
+
+        # --- 4. left-join calendar with original -----------------------
+        lf_joined = lf_calendar.join(
+            lf_all,
+            on=[date_column, "asset_id"],
+            how="left",
+        ).sort(["asset_id", date_column])
+
+        # --- 5. forward-fill and other null-handling -------------------
+        # Perform forward-fill within a window over each asset without aggregating,
+        # so that the original `date` column is retained (avoids ColumnNotFoundError).
+        forward_fill_cols = [
+            pl.col(col).forward_fill().over("asset_id").alias(col)
+            for col in self.FILL_COLS_FFILL if col in available_cols
+        ]
+
+        lf_filled = (
+            lf_joined
+            .with_columns(forward_fill_cols)  # ensure `close` is forward-filled first
+            .with_columns([
+                (pl.col("volume").is_null()).cast(pl.Float32).alias("is_missing"),
+                pl.col("open").fill_null(pl.col("close")),
+                pl.col("high").fill_null(pl.col("close")),
+                pl.col("low").fill_null(pl.col("close")),
+                pl.col("volume").fill_null(0),
+            ])
+        )
+
+        # --- 6. collect & partition back to dict -----------------------
+        df_all = lf_filled.collect().to_pandas()
+        return {
+            asset: grp.drop(columns=["asset_id"]).reset_index(drop=True)
+            for asset, grp in df_all.groupby("asset_id", sort=False)
+        }

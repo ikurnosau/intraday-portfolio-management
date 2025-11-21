@@ -41,6 +41,7 @@ class StooqRetriever:
             _download_from_gdrive()
     
     def bars(self,
+             symbol_or_symbols: str | list[str],
              start: datetime=datetime(1999, 6, 1, tzinfo=Constants.Data.EASTERN_TZ),
              end: datetime=datetime(2019, 1, 1, tzinfo=Constants.Data.EASTERN_TZ)) -> dict[str: pd.DataFrame]:
         start = pd.to_datetime(start)
@@ -62,5 +63,5 @@ class StooqRetriever:
 
         return asset_dfs
 
-    def bars_with_quotes(self) -> dict[str: pd.DataFrame]:
-        return self.bars()
+    def bars_with_quotes(self, *args, **kwargs) -> dict[str: pd.DataFrame]:
+        return self.bars(*args, **kwargs)
