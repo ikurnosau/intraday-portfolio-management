@@ -10,3 +10,4 @@ gdown
 matplotlib
 pytorch-tcn
 polars
+pyarrow
