@@ -8,27 +8,29 @@ from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from datetime import datetime, timedelta
 import torch
 import numpy as np
+import polars as pl
+import math
+from data.processed.indicators_polars import EMA as EMA_pl, RSI as RSI_pl, VWAP as VWAP_pl
 
-from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig, ObservabilityConfig
+from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig, ObservabilityConfig, RLConfig
 from config.constants import Constants
 from data.processed.indicators import *
 from data.processed.targets import Balanced3ClassClassification, Balanced5ClassClassification, BinaryClassification, MeanReturnSignClassification, FutureMeanReturnClassification, TripleClassification, ReturnOverHorizon
 from data.processed.normalization import MinMaxNormalizer, ZScoreOverWindowNormalizer, MinMaxNormalizerOverWindow
 from data.processed.missing_values_handling import ForwardFillFlatBars, DummyMissingValuesHandler
-from core_data_prep.core_data_prep import ContinuousForwardFill
+from data.processed.missing_values_handling import ContinuousForwardFillPolars
+from data.raw.retrievers.stooq_retriever import StooqRetriever
+from data.raw.retrievers.alpaca_markets_retriever import AlpacaMarketsRetriever
 from modeling.models.tsa_classifier import TemporalSpatial
 from modeling.models.lstm import LSTMClassifier
 from modeling.models.mlp import MLP
-# from modeling.models.tcn import TCN
+from modeling.models.tcn import TCN
 from modeling.models.tsa_allocator import TSAllocator
-# from modeling.models.tcn import TCNPredictor
+from modeling.models.tcn import TCNPredictor
+from modeling.models.tst import TimeSeriesTransformer
 from modeling.loss import PositionReturnLoss, position_return_loss_with_entropy
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
-import polars as pl
-import math
-from data.processed.indicators_polars import EMA as EMA_pl, RSI as RSI_pl, VWAP as VWAP_pl
-
-from core_data_prep.core_data_prep import ContinuousForwardFill, ContinuousForwardFillPolars
+from core_data_prep.validations import Validator
 
 
 frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Minute)
@@ -36,6 +38,7 @@ horizon = 1
 target = TripleClassification(horizon=horizon, base_feature='close')
 
 data_config = DataConfig(
+    retriever=AlpacaMarketsRetriever(download_from_gdrive=False, timeframe=frequency),
     symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
     frequency=frequency,
 
@@ -100,12 +103,14 @@ data_config = DataConfig(
     in_seq_len=60,
     horizon=horizon,
     multi_asset_prediction=True,
+    
+    validator=Validator(),
 )
 
 
 model_config = ModelConfig(
     model=TemporalSpatial(
-        input_dim=len(data_config.features),
+        input_dim=len(data_config.features_polars),
         output_dim=1,  # regression
         hidden_dim=128,
         lstm_layers=2,
@@ -156,6 +161,13 @@ train_config = TrainConfig(
     save_path="",
 )
 
+rl_config = RLConfig(
+    trajectory_length=12,
+    fee=0.0,
+    spread_multiplier=0.67,
+    trade_asset_count=1,
+)
+
 observability_config = ObservabilityConfig(
     experiment_name="Return Regression MLP"
 )
@@ -164,5 +176,6 @@ config = ExperimentConfig(
     data_config=data_config,
     model_config=model_config,
     train_config=train_config,
+    rl_config=rl_config,
     observability_config=observability_config
 )
