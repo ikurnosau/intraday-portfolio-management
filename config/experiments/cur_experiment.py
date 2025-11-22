@@ -28,18 +28,18 @@ from modeling.models.tcn import TCN
 from modeling.models.tsa_allocator import TSAllocator
 from modeling.models.tcn import TCNPredictor
 from modeling.models.tst import TimeSeriesTransformer
+from modeling.models.ts_multilayer import TemporalSpatialMultiLayer
 from modeling.loss import PositionReturnLoss, position_return_loss_with_entropy
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
 from core_data_prep.validations import Validator
 
 
-frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Day)
-horizon = 30
+frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Minute)
+horizon = 1
 target = TripleClassification(horizon=horizon, base_feature='close')
 
 data_config = DataConfig(
-    retriever=StooqRetriever(download_from_gdrive=False),
-
+    retriever=AlpacaMarketsRetriever(download_from_gdrive=False, timeframe=frequency),
     symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
     frequency=frequency,
 
@@ -48,10 +48,10 @@ data_config = DataConfig(
     # train_set_last_date=datetime(2025, 4, 1, tzinfo=timezone.utc),
     # val_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
 
-    start=datetime(1970, 1, 2, tzinfo=Constants.Data.EASTERN_TZ),
-    end=datetime(2019, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
-    train_set_last_date=datetime(2012, 1, 1, tzinfo=Constants.Data.EASTERN_TZ), 
-    val_set_last_date=datetime(2014, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    start=datetime(2024, 9, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    end=datetime(2025, 10, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    train_set_last_date=datetime(2025, 7, 1, tzinfo=Constants.Data.EASTERN_TZ), 
+    val_set_last_date=datetime(2025, 8, 1, tzinfo=Constants.Data.EASTERN_TZ),
 
     features_polars={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------
@@ -101,22 +101,27 @@ data_config = DataConfig(
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
     missing_values_handler_polars=ContinuousForwardFillPolars(frequency=str(frequency)),
 
-    in_seq_len=80,
+    in_seq_len=60,
     horizon=horizon,
     multi_asset_prediction=True,
-
+    
     validator=None, #Validator(),
 )
 
 
 model_config = ModelConfig(
-    model=TimeSeriesTransformer(
-        hidden_dim=64,
-        num_heads=4,
-        num_layers=2,
-        seq_len=data_config.in_seq_len,
-        feat_dim=len(data_config.features_polars),
+    model=TemporalSpatialMultiLayer(
+	    num_assets=len(data_config.symbol_or_symbols),
+        input_dim=len(data_config.features_polars),
+	    hidden_dim=128,
+        output_dim=1,    
+        num_layers=1,
+        bidirectional=True,
         dropout=0.2,
+	    use_spatial_attention=True,
+        num_heads=4,
+        use_asset_embedding=True,
+        asset_embed_dim=16,
     ),
     registered_model_name="TemporalSpatial Regressor",
 )
@@ -147,7 +152,7 @@ train_config = TrainConfig(
     device=torch.device("cuda"),
     cudnn_benchmark=True,
 
-    batch_size=16,
+    batch_size=128,
     shuffle=True,
     num_workers=8,
     prefetch_factor=4,
@@ -160,8 +165,8 @@ train_config = TrainConfig(
 
 rl_config = RLConfig(
     trajectory_length=12,
-    fee=0.001,
-    spread_multiplier=0.0,
+    fee=0.0,
+    spread_multiplier=0.67,
     trade_asset_count=1,
 )
 
