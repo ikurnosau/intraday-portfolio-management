@@ -11,13 +11,10 @@ class TSAllocator(TemporalSpatial):
         super().__init__(*args, **kwargs)
         self.temperature = temperature
         
-    def forward(self, x: torch.Tensor, log=False):
+    def forward(self, x: torch.Tensor):
         action_pred = super().forward(x)
-        action_pred = F.softsign(action_pred / self.temperature)
+        action_pred = F.sigmoid(action_pred / self.temperature)
   
-        action = action_pred / (smooth_abs(action_pred).sum(dim=-1, keepdim=True) + 1e-15)
-
-        total_allocations = x.abs().sum(dim=-1)
-        assert (total_allocations < 1.1).all(), f"Some allocations are greater than 1.1 in total! Allocations: {total_allocations}"
+        action = action_pred / action_pred.sum(dim=-1, keepdim=True)
 
         return action

@@ -40,7 +40,7 @@ target = TripleClassification(horizon=horizon, base_feature='close')
 data_config = DataConfig(
     retriever=StooqRetriever(download_from_gdrive=False),
 
-    symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
+    symbol_or_symbols=Constants.Data.DJIA,
     frequency=frequency,
 
     # start=datetime(2024, 6, 1, tzinfo=timezone.utc),
@@ -101,7 +101,7 @@ data_config = DataConfig(
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
     missing_values_handler_polars=ContinuousForwardFillPolars(frequency=str(frequency)),
 
-    in_seq_len=80,
+    in_seq_len=30,
     horizon=horizon,
     multi_asset_prediction=True,
 
@@ -117,7 +117,7 @@ model_config = ModelConfig(
         lstm_layers=2,
         bidirectional=True,
         dropout=0.2,
-        num_heads=4,
+        num_heads=1,
         use_spatial_attention=False,
         num_assets=len(data_config.symbol_or_symbols),
         asset_embed_dim=0,
@@ -128,7 +128,7 @@ model_config = ModelConfig(
 cur_optimizer = torch.optim.AdamW(
     model_config.model.parameters(),
     lr=1e-3,
-    weight_decay=1e-10,
+    weight_decay=1e-2,
     amsgrad=True,
 )
 
@@ -151,7 +151,7 @@ train_config = TrainConfig(
     device=torch.device("cuda"),
     cudnn_benchmark=True,
 
-    batch_size=16,
+    batch_size=128,
     shuffle=True,
     num_workers=8,
     prefetch_factor=4,

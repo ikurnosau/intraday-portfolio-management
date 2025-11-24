@@ -70,3 +70,9 @@ def rmse_multi_asset_coral(outputs: torch.Tensor, targets: torch.Tensor) -> floa
     targ = targets.to(torch.float32)
     return torch.sqrt(torch.mean((preds - targ) ** 2)).item()
 
+class MeanReturn: 
+    def __init__(self, fee=0.001): 
+        self.fee = fee
+
+    def __call__(self, position: torch.Tensor, next_return: torch.Tensor): 
+        return ((position * next_return).sum(dim=-1) - self.fee).mean()

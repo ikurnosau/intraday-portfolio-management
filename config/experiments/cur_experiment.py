@@ -29,13 +29,13 @@ from modeling.models.tsa_allocator import TSAllocator
 from modeling.models.tcn import TCNPredictor
 from modeling.models.tst import TimeSeriesTransformer
 from modeling.loss import PositionReturnLoss, position_return_loss_with_entropy
-from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
+from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression, MeanReturn
 from core_data_prep.validations import Validator
 
 
 frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Day)
 horizon = 30
-target = TripleClassification(horizon=horizon, base_feature='close')
+target = ReturnOverHorizon(horizon=horizon, base_feature='close')
 
 data_config = DataConfig(
     retriever=StooqRetriever(download_from_gdrive=False),
@@ -101,7 +101,7 @@ data_config = DataConfig(
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
     missing_values_handler_polars=ContinuousForwardFillPolars(frequency=str(frequency)),
 
-    in_seq_len=80,
+    in_seq_len=30,
     horizon=horizon,
     multi_asset_prediction=True,
 
@@ -110,17 +110,17 @@ data_config = DataConfig(
 
 
 model_config = ModelConfig(
-    model=TemporalSpatial(
+    model=TSAllocator(
         input_dim=len(data_config.features_polars),
         output_dim=1,  # regression
-        hidden_dim=16,
-        lstm_layers=1,
+        hidden_dim=64,
+        lstm_layers=2,
         bidirectional=True,
-        dropout=0.3,
+        dropout=0.2,
         num_heads=1,
-        use_spatial_attention=True,
+        use_spatial_attention=False,
         num_assets=len(data_config.symbol_or_symbols),
-        asset_embed_dim=8,
+        asset_embed_dim=0,
     ),
     registered_model_name="TemporalSpatial Regressor",
 )
@@ -128,12 +128,12 @@ model_config = ModelConfig(
 cur_optimizer = torch.optim.AdamW(
     model_config.model.parameters(),
     lr=1e-3,
-    weight_decay=1e-3,
+    weight_decay=1e-2,
     amsgrad=True,
 )
 
 train_config = TrainConfig(
-    loss_fn=torch.nn.MSELoss(),
+    loss_fn=PositionReturnLoss(fee=0.001),
     optimizer=cur_optimizer,
     scheduler={
         "type": "OneCycleLR",
@@ -144,14 +144,14 @@ train_config = TrainConfig(
         "anneal_strategy": "cos",
         "cycle_momentum": False,
     },
-    metrics={"rmse": rmse_regression},
+    metrics={"log_return": PositionReturnLoss(fee=0.001), "mean_return": MeanReturn(fee=0.001)},
     num_epochs=20,
     early_stopping_patience=10,
 
     device=torch.device("cuda"),
     cudnn_benchmark=True,
 
-    batch_size=16,
+    batch_size=128,
     shuffle=True,
     num_workers=8,
     prefetch_factor=4,
