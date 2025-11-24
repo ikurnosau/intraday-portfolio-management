@@ -25,6 +25,9 @@ class RlAgent:
             return None
 
         action, log_prob = self.actor(self.current_state)
+        # !Critical Issue - this line breaks traning flow
+        # TODO: Figure our how can I successfully evaluate allocator actor without this detach
+        action = action.detach().clone()
         reward, next_state = self.env.step(action)
 
         prev_state = self.current_state
