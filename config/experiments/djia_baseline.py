@@ -110,13 +110,17 @@ data_config = DataConfig(
 
 
 model_config = ModelConfig(
-    model=TimeSeriesTransformer(
+    model=TemporalSpatial(
+        input_dim=len(data_config.features_polars),
+        output_dim=1,  # regression
         hidden_dim=64,
-        num_heads=4,
-        num_layers=2,
-        seq_len=data_config.in_seq_len,
-        feat_dim=len(data_config.features_polars),
+        lstm_layers=2,
+        bidirectional=True,
         dropout=0.2,
+        num_heads=4,
+        use_spatial_attention=False,
+        num_assets=len(data_config.symbol_or_symbols),
+        asset_embed_dim=0,
     ),
     registered_model_name="TemporalSpatial Regressor",
 )
