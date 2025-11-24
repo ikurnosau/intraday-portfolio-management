@@ -341,12 +341,16 @@ class DataPreparer:
                              train_set_last_date: datetime | None=None,
                              val_set_last_date: datetime | None=None,
                              ) -> tuple[list[dict[str, pd.DataFrame]], list[dict[str, pd.DataFrame]], list[dict[str, pd.DataFrame]]]:
-        first_timestamp = min(df[self.date_column].min() for df in data.values())
+        first_train_timestamp = min(df[self.date_column].min() for df in data.values())
+        first_val_timestamp = min(df[(df[self.date_column] > train_set_last_date)][self.date_column].min() for df in data.values())
+        first_test_timestamp = min(df[(df[self.date_column] > val_set_last_date)][self.date_column].min() for df in data.values())
         for asset_name, df in list(data.items()):
-            if min(df[self.date_column]) > first_timestamp:
-                new_first_row = df.iloc[0].copy()
-                new_first_row[self.date_column] = first_timestamp
-                data[asset_name] = pd.concat([pd.DataFrame([new_first_row]), df], ignore_index=True)
+            for first_timestamp in [first_test_timestamp, first_val_timestamp, first_train_timestamp]:
+                if min(df[self.date_column]) > first_timestamp:
+                    new_first_row = df.iloc[0].copy()
+                    new_first_row[self.date_column] = first_timestamp
+                    df = pd.concat([pd.DataFrame([new_first_row]), df], ignore_index=True)
+            data[asset_name] = df
 
         train_data = { asset_name: df[df[self.date_column] <= train_set_last_date] for asset_name, df in data.items()}
         val_data = { asset_name: df[(df[self.date_column] > train_set_last_date) & (df[self.date_column] <= val_set_last_date)] for asset_name, df in data.items()}
