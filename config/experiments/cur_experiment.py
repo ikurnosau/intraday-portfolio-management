@@ -40,7 +40,7 @@ target = TripleClassification(horizon=horizon, base_feature='close')
 data_config = DataConfig(
     retriever=StooqRetriever(download_from_gdrive=False),
 
-    symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
+    symbol_or_symbols=Constants.Data.DJIA,
     frequency=frequency,
 
     # start=datetime(2024, 6, 1, tzinfo=timezone.utc),
@@ -113,14 +113,14 @@ model_config = ModelConfig(
     model=TemporalSpatial(
         input_dim=len(data_config.features_polars),
         output_dim=1,  # regression
-        hidden_dim=64,
-        lstm_layers=2,
+        hidden_dim=16,
+        lstm_layers=1,
         bidirectional=True,
-        dropout=0.2,
-        num_heads=4,
-        use_spatial_attention=False,
+        dropout=0.3,
+        num_heads=1,
+        use_spatial_attention=True,
         num_assets=len(data_config.symbol_or_symbols),
-        asset_embed_dim=0,
+        asset_embed_dim=8,
     ),
     registered_model_name="TemporalSpatial Regressor",
 )
@@ -128,7 +128,7 @@ model_config = ModelConfig(
 cur_optimizer = torch.optim.AdamW(
     model_config.model.parameters(),
     lr=1e-3,
-    weight_decay=1e-10,
+    weight_decay=1e-3,
     amsgrad=True,
 )
 
