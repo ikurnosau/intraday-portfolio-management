@@ -39,6 +39,28 @@ class PositionReturnLoss:
     def __call__(self, position: torch.Tensor, next_return: torch.Tensor): 
         return -torch.log1p((position * next_return).sum(dim=-1) - self.fee).mean()
 
+class RiskAdjustedPositionReturnLoss:
+    def __init__(self, fee: float = 1e-3, risk_lambda: float = 0.0):
+        self.fee = fee
+        self.risk_lambda = risk_lambda
+
+    def __call__(self, position: torch.Tensor, next_return: torch.Tensor):
+        # portfolio return per sample
+        port_ret = (position * next_return).sum(dim=-1) - self.fee        # (B,)
+
+        # 1. reward term (same as before)
+        reward_term = -torch.log1p(port_ret).mean()
+
+        # 2. risk term (sample variance)
+        if self.risk_lambda > 0:
+            demeaned = port_ret - port_ret.mean()
+            var = (demeaned ** 2).mean()
+            risk_term = self.risk_lambda * var
+        else:
+            risk_term = 0.0
+
+        return reward_term + risk_term
+
 
 def position_return_loss_with_entropy(position: torch.Tensor, next_return: torch.Tensor, lambda_entropy: float = 0.003):
     base_loss = -(torch.log1p((position * next_return).sum(dim=-1))).mean()

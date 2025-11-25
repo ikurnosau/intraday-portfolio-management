@@ -28,7 +28,7 @@ from modeling.models.tcn import TCN
 from modeling.models.tsa_allocator import TSAllocator
 from modeling.models.tcn import TCNPredictor
 from modeling.models.tst import TimeSeriesTransformer
-from modeling.loss import PositionReturnLoss, position_return_loss_with_entropy
+from modeling.loss import PositionReturnLoss, position_return_loss_with_entropy, RiskAdjustedPositionReturnLoss
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression, MeanReturn
 from core_data_prep.validations import Validator
 
