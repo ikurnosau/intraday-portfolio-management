@@ -118,6 +118,7 @@ class DataPreparer:
 
     def _fill_missing_values_polars(self, data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
         filled_data = self.missing_values_handler(data)
+
         if self.validator is not None:
             self.validator.validate_filled_data(filled_data)
 
@@ -341,9 +342,10 @@ class DataPreparer:
                              train_set_last_date: datetime | None=None,
                              val_set_last_date: datetime | None=None,
                              ) -> tuple[list[dict[str, pd.DataFrame]], list[dict[str, pd.DataFrame]], list[dict[str, pd.DataFrame]]]:
+        cutoff_compensation = self.in_seq_len + self.normalizer.window
         first_train_timestamp = min(df[self.date_column].min() for df in data.values())
-        first_val_timestamp = min(df[(df[self.date_column] > train_set_last_date)][self.date_column].min() for df in data.values())
-        first_test_timestamp = min(df[(df[self.date_column] > val_set_last_date)][self.date_column].min() for df in data.values())
+        first_val_timestamp = min(df[(df[self.date_column] > (train_set_last_date - timedelta(days=cutoff_compensation)))][self.date_column].min() for df in data.values())
+        first_test_timestamp = min(df[(df[self.date_column] > (val_set_last_date - timedelta(days=cutoff_compensation)))][self.date_column].min() for df in data.values())
         for asset_name, df in list(data.items()):
             for first_timestamp in [first_test_timestamp, first_val_timestamp, first_train_timestamp]:
                 if min(df[self.date_column]) > first_timestamp:
@@ -353,8 +355,8 @@ class DataPreparer:
             data[asset_name] = df
 
         train_data = { asset_name: df[df[self.date_column] <= train_set_last_date] for asset_name, df in data.items()}
-        val_data = { asset_name: df[(df[self.date_column] > train_set_last_date) & (df[self.date_column] <= val_set_last_date)] for asset_name, df in data.items()}
-        test_data = { asset_name: df[df[self.date_column] > val_set_last_date] for asset_name, df in data.items()}
+        val_data = { asset_name: df[(df[self.date_column] > (train_set_last_date - timedelta(days=cutoff_compensation))) & (df[self.date_column] <= val_set_last_date)] for asset_name, df in data.items()}
+        test_data = { asset_name: df[df[self.date_column] > (val_set_last_date - timedelta(days=cutoff_compensation))] for asset_name, df in data.items()}
 
         return [train_data], [val_data], [test_data]
 
