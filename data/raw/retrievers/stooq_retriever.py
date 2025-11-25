@@ -59,7 +59,11 @@ class StooqRetriever:
             df['ask_price'] = 0
             df['bid_price'] = 0
 
-            asset_dfs[name.split('_')[0].upper()] = df.loc[(df['date'] >= start) & (df['date'] <= end)]
+            asset_df = df.loc[(df['date'] >= start) & (df['date'] <= end)]
+            if len(asset_df) > 0:
+                asset_dfs[name.split('_')[0].upper()] = asset_df
+            else: 
+                logging.warning(f"No data found for {name} between {start} and {end}")
 
         return asset_dfs
 
