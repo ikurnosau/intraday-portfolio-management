@@ -28,7 +28,7 @@ from modeling.models.tcn import TCN
 from modeling.models.tsa_allocator import TSAllocator
 from modeling.models.tcn import TCNPredictor
 from modeling.models.tst import TimeSeriesTransformer
-from modeling.loss import PositionReturnLoss, position_return_loss_with_entropy
+from modeling.loss import PositionReturnLoss, position_return_loss_with_entropy, RiskAdjustedPositionReturnLoss
 from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression, MeanReturn
 from core_data_prep.validations import Validator
 
@@ -49,9 +49,9 @@ data_config = DataConfig(
     # val_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
 
     start=datetime(1970, 1, 2, tzinfo=Constants.Data.EASTERN_TZ),
-    end=datetime(2019, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
-    train_set_last_date=datetime(2012, 1, 1, tzinfo=Constants.Data.EASTERN_TZ), 
-    val_set_last_date=datetime(2014, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    end=datetime(2001, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    train_set_last_date=datetime(1999, 1, 1, tzinfo=Constants.Data.EASTERN_TZ), 
+    val_set_last_date=datetime(2000, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
 
     features_polars={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------
@@ -101,7 +101,7 @@ data_config = DataConfig(
     normalizer=MinMaxNormalizerOverWindow(window=60, fit_feature=None),
     missing_values_handler_polars=ContinuousForwardFillPolars(frequency=str(frequency)),
 
-    in_seq_len=30,
+    in_seq_len=60,
     horizon=horizon,
     multi_asset_prediction=True,
 
@@ -117,10 +117,10 @@ model_config = ModelConfig(
         lstm_layers=1,
         bidirectional=True,
         dropout=0.2,
-        num_heads=4,
+        num_heads=2,
         use_spatial_attention=True,
         num_assets=len(data_config.symbol_or_symbols),
-        asset_embed_dim=16,
+        asset_embed_dim=8,
     ),
     registered_model_name="TemporalSpatial Regressor",
 )
@@ -133,7 +133,7 @@ cur_optimizer = torch.optim.AdamW(
 )
 
 train_config = TrainConfig(
-    loss_fn=PositionReturnLoss(fee=0.001),
+    loss_fn=RiskAdjustedPositionReturnLoss(fee=0.001, risk_lambda=2.),
     optimizer=cur_optimizer,
     scheduler={
         "type": "OneCycleLR",
@@ -157,7 +157,7 @@ train_config = TrainConfig(
     prefetch_factor=4,
     pin_memory=True,
     persistent_workers=True,
-    drop_last=True,
+    drop_last=False,
     
     save_path="",
 )

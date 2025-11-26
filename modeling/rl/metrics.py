@@ -4,7 +4,7 @@ from typing import Callable, Dict, Sequence
 
 import numpy as np
 
-MINUTES_PER_TRADING_YEAR: int = 252 * 390  # 252 trading days × 390 minutes per trading day ≈ 98 000
+MINUTES_PER_TRADING_YEAR: int = 12  # 252 trading days × 390 minutes per trading day ≈ 98 000
 
 
 def _to_numpy(returns: Sequence[float | int]) -> np.ndarray:
@@ -70,7 +70,7 @@ def MDD(returns: Sequence[float | int]) -> float:
     wealth = np.cumprod(1.0 + r)
     running_max = np.maximum.accumulate(wealth)
     drawdowns = (wealth / running_max) - 1.0
-    return float(drawdowns.min())  # most negative value
+    return - float(drawdowns.min()) * 100  # transform to positive percentage
 
 
 def CR(returns: Sequence[float | int]) -> float:
