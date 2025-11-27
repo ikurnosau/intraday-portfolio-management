@@ -16,10 +16,12 @@ class AllocationPropogationActor(nn.Module, BaseActor):
     def __init__(
         self,
         allocator: nn.Module,
+        choose_one: bool = False,
         train_allocator: bool = False,
     ):
         super().__init__()
         self.allocator = allocator
+        self.choose_one = choose_one
 
         # Freeze allocator parameters (assumed pre-trained)
         self.train_allocator = train_allocator
@@ -34,6 +36,12 @@ class AllocationPropogationActor(nn.Module, BaseActor):
                 action_pred = self.allocator(state.signal_features)  # (B, n_assets)
         else:
             action_pred = self.allocator(state.signal_features)  # (B, n_assets)
+            
+        if self.choose_one:
+            best_idx = action_pred.argmax(dim=1, keepdim=True)  # (B, 1)
+            one_hot = torch.zeros_like(action_pred)
+            one_hot.scatter_(1, best_idx, 1.0)
+            action_pred = one_hot
 
         return action_pred, torch.zeros_like(action_pred)
 
