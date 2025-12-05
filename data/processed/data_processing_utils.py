@@ -1,6 +1,7 @@
 import sys
 import os
 import pandas as pd
+from typing import Any
 from zoneinfo import ZoneInfo
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
@@ -13,6 +14,19 @@ def filter_by_regular_hours(data, datetime_column):
     return data[(data[datetime_column].dt.time >= Constants.Data.REGULAR_TRADING_HOURS_START) & \
                 (data[datetime_column].dt.time <= Constants.Data.REGULAR_TRADING_HOURS_END) & \
                 (data[datetime_column].dt.dayofweek < 5)].reset_index(drop=True)
+
+
+def convert_time_to_eastern(any_time: Any) -> Any:
+    if not pd.api.types.is_datetime64_any_dtype(any_time):
+            any_time = pd.to_datetime(any_time)
+        
+    # If timezone-naive, assume UTC
+    if any_time.tz is None:
+        any_time = any_time.tz_localize('UTC')
+    
+    # Convert to Eastern Time
+    any_time = any_time.tz_convert(Constants.Data.EASTERN_TZ)
+    return any_time
 
 
 def convert_to_eastern(df: pd.DataFrame, date_column: str = 'date') -> pd.DataFrame:

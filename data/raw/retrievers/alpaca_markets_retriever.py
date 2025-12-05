@@ -184,18 +184,20 @@ class AlpacaMarketsRetriever:
             
         return self._bars_with_quotes(symbol_or_symbols, start, end, save_dir)
         
-    def todays_bars(self, symbol_or_symbols, limit=100):
+    def latest_bars(self, symbol_or_symbols, limit=100, pull_n_days=3):
         request_params = StockBarsRequest(
             symbol_or_symbols=symbol_or_symbols,
             timeframe=self.timeframe,
-            feed=self.FEED
+            start=datetime.now(timezone.utc) - timedelta(days=pull_n_days),
+            feed=self.FEED,
         )
         bars = self.client.get_stock_bars(request_params).data
         response = {}
         for symbol, stock_data in bars.items():
-            df = pd.DataFrame([data_item.__dict__ for data_item in stock_data]).head(limit) \
+            df = pd.DataFrame([data_item.__dict__ for data_item in stock_data]).tail(limit).reset_index(drop=True) \
                     .drop(columns=['symbol', 'trade_count']) \
                     .rename(columns={'timestamp': 'date'})
+            assert len(df) == limit, f"Not enough bars for pulled for {symbol} to satisfy the limit of {limit}; pulled {pull_n_days} days and got {len(df)} bars."
             # Convert to Eastern Time
             df = convert_to_eastern(df, 'date')
             response[symbol] = df
@@ -224,9 +226,19 @@ class AlpacaMarketsRetriever:
         )
         quotes = self.client.get_stock_latest_quote(request_params)
 
+        quotes = {
+            symbol: {
+                'bid_price': quote.bid_price, 
+                'ask_price': quote.ask_price, 
+                'bid_size': quote.bid_size, 
+                'ask_size': quote.ask_size
+            } 
+            for symbol, quote in quotes.items()
+        }
+
         return quotes
 
-    def latest_spread(self, symbol_or_symbols):
-        quotes = self.latest_quote(symbol_or_symbols)
-        return {symbol: (quote.ask_price - quote.bid_price) / quote.bid_price
-                for symbol, quote in quotes.items()}
+    # def latest_spread(self, symbol_or_symbols):
+    #     quotes = self.latest_quote(symbol_or_symbols)
+    #     return {symbol: (quote.ask_price - quote.bid_price) / quote.bid_price
+    #             for symbol, quote in quotes.items()}
