@@ -5,7 +5,18 @@ from datetime import datetime, timedelta
 import os
 
 
-def plot_cumulative_wealth(returns_dict: dict[str, list[float]], start_time: datetime, end_time: datetime, compare_to_baseline: bool = False):
+def plot_cumulative_wealth(
+        returns_dict: dict[str, list[float]], 
+        start_time: datetime, 
+        end_time: datetime, 
+        ours_to_include: list[str] = [], 
+        compare_to_baseline: bool = False, 
+        root_dir: str = '../modeling/rl/visualization'
+    ):
+    if len(ours_to_include) > 0:
+        for our_result in ours_to_include:
+            returns_dict[our_result] = list(pd.read_csv(os.path.join(root_dir, f'results_ours', f'realized_returns_{our_result.lower()}.csv'))['0'])
+
     # Create uniform datetime range
     n_points = len(next(iter(returns_dict.values()))) + 1  # get length from any series
 
@@ -24,16 +35,16 @@ def plot_cumulative_wealth(returns_dict: dict[str, list[float]], start_time: dat
         plt.plot(time_points, wealth, label=name)
 
     if compare_to_baseline:
-        root_dir = '../modeling/rl/visualization/baselines'
-        for baseline_name in os.listdir(root_dir):
-            baseline_wealth = pd.read_csv(os.path.join(root_dir, baseline_name))['y']
+        baseline_dir = os.path.join(root_dir, 'baselines')
+        for baseline_name in os.listdir(baseline_dir):
+            baseline_wealth = pd.read_csv(os.path.join(baseline_dir, baseline_name))['y']
             extra_time = np.linspace(
                 start_time.timestamp(),
                 end_time.timestamp(),
                 num=len(baseline_wealth)
             )
             extra_time = [datetime.fromtimestamp(t) for t in extra_time]
-            plt.plot(extra_time, baseline_wealth, linestyle="--", label=baseline_name)
+            plt.plot(extra_time, baseline_wealth, linestyle="--", label=baseline_name.split('.')[0])
 
     # Formatting
     plt.xlabel("Date")

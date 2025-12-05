@@ -163,7 +163,7 @@ class DataPreparer:
 
         features_normalized = self._normalize_features(
             raw_features,
-            features_to_normalize=[col for col in features.keys() if col not in {'is_missing', 'tod_sin', 'tod_cos'}]
+            features_to_normalize=[col for col in features.keys() if col not in {'is_missing', 'tod_sin', 'tod_cos', 'spread'}]
         )
 
         X = self._features_to_model_input(features_normalized)[-n_timestamps:]

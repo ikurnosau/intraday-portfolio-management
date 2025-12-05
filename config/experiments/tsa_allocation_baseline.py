@@ -87,6 +87,8 @@ data_config = DataConfig(
         ).fill_null(0.0),
 
         "is_missing": lambda lf: pl.col("is_missing"),
+
+        "spread": lambda lf: (pl.col("ask_price") - pl.col("bid_price")) / (pl.col("ask_price") + 1e-8),
     },
 
     statistics={
