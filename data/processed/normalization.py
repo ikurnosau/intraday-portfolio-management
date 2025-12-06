@@ -1,5 +1,12 @@
 import pandas as pd
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from abc import ABC, abstractmethod
+
+
+class BaseNormalizer(ABC):
+    @abstractmethod
+    def get_window(self) -> int:
+        raise NotImplementedError("Subclasses must implement this method")
 
 
 class ZScoreOverWindowNormalizer: 
@@ -96,7 +103,7 @@ class SmartMinMaxNormalizer:
         return self.fit_transform(data)
 
 
-class MinMaxNormalizerOverWindow:
+class MinMaxNormalizerOverWindow(BaseNormalizer):
     """Rolling-window Min-Max scaler.
 
     For each timestamp *t* the value ``x_t`` is rescaled using the *minimum* and
@@ -148,3 +155,6 @@ class MinMaxNormalizerOverWindow:
             scaled = (data - roll_min) / denom
 
         return scaled.astype(float)
+    
+    def get_window(self) -> int:
+        return self.window

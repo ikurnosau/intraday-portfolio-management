@@ -8,13 +8,14 @@ from data.raw.retrievers.alpaca_markets_retriever import AlpacaMarketsRetriever
 class Repository:
     def __init__(self, 
                  trading_symbols: list[str], 
+                 required_history_depth: int = 500,
                  bars_and_quotes: dict[str: pd.DataFrame] | None = None,
-                 retriever: AlpacaMarketsRetriever | None = None,
-                 bars_history_depth: int = 500):
-        self.symbols = trading_symbols
+                 retriever: AlpacaMarketsRetriever | None = None):
+        self.symbols = sorted(trading_symbols)
         self.retriever = retriever
+        self.required_history_depth = required_history_depth
         self.bars_and_quotes = bars_and_quotes if bars_and_quotes is not None \
-            else self.initialize_bars_and_quotes_with_latest_values(bars_history_depth)
+            else self.initialize_bars_and_quotes_with_latest_values(required_history_depth)
 
         self.bid_price =  {symbol: self.bars_and_quotes[symbol]['bid_price'].iloc[-1] for symbol in trading_symbols}
         self.ask_price = {symbol: self.bars_and_quotes[symbol]['ask_price'].iloc[-1] for symbol in trading_symbols}
@@ -55,6 +56,9 @@ class Repository:
         self.ask_price[data.symbol] = data.ask_price
         self.bid_size[data.symbol] = data.bid_size
         self.ask_size[data.symbol] = data.ask_size
+
+    def get_asset_dfs(self) -> dict[str: pd.DataFrame]:
+        return {symbol: self.bars_and_quotes[symbol].tail(self.required_history_depth) for symbol in self.symbols}
 
     def get_bid_price(self, symbol):
         return self.bid_price[symbol]

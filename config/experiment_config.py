@@ -8,6 +8,8 @@ from alpaca.data.timeframe import TimeFrame
 from typing import Any
 from core_data_prep.validations import Validator
 from modeling.rl.actors.base_actor import BaseActor
+from data.processed.normalization import BaseNormalizer
+
 
 @dataclass
 class DataConfig: 
@@ -23,7 +25,7 @@ class DataConfig:
     features_polars: dict[str, Callable]
     statistics: dict[str, Callable]
     target: Callable
-    normalizer: Callable
+    normalizer: BaseNormalizer
     missing_values_handler_polars: Callable
     in_seq_len: int
     horizon: int

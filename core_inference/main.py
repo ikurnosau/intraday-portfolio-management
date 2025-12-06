@@ -6,6 +6,7 @@ from alpaca.data.live import StockDataStream
 from alpaca.data.enums import DataFeed
 
 from config.experiments.cur_experiment import config
+from core_data_prep.core_data_prep import DataPreparer
 from core_inference.bars_response_handler import BarsResponseHandler
 from core_inference.quotes_response_handler import QuotesResponseHandler
 from core_inference.trader import Trader
@@ -23,7 +24,17 @@ logging.basicConfig(
 )
 
 
-repository = Repository()
+data_preparer = DataPreparer(
+    normalizer=config.data_config.normalizer,
+    missing_values_handler=config.data_config.missing_values_handler_polars,
+    in_seq_len=config.data_config.in_seq_len,
+    frequency=str(config.data_config.frequency),
+    validator=config.data_config.validator
+)
+repository = Repository(
+    trading_symbols=config.data_config.symbol_or_symbols,
+    required_history_depth=config.data_config.in_seq_len + config.data_config.normalizer.get_window() + 30,
+)
 brokerage_proxy = AlpacaBrokerageProxy()
 trader = Trader(brokerage_proxy)
 quotes_response_handler = QuotesResponseHandler(repository)
