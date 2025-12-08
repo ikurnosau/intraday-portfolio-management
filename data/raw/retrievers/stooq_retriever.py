@@ -28,13 +28,13 @@ def _download_folder_from_gdrive(folder_id: str, output_dir: str, folder_name: s
 
 def _download_from_gdrive():
     _download_folder_from_gdrive(
-        folder_id= "14cvQhyjltHfxa_-rVrGi67QfrsYtWqHh",
+        folder_id= "1PqNzu2bYcGZkpSgIPNo-F3cw9weGJZwW",
         output_dir='../data/raw/stooq/bars',
-        folder_name="djia"
+        folder_name="djia_all"
     )
     
 class StooqRetriever:
-    ROOT_DIR = '../data/raw/stooq/bars/djia'
+    ROOT_DIR = '../data/raw/stooq/bars/djia_all'
 
     def __init__(self, download_from_gdrive: bool=False):
         if download_from_gdrive:
@@ -49,21 +49,23 @@ class StooqRetriever:
 
         asset_dfs = {}
         for name in os.listdir(self.ROOT_DIR):
-            df = pd.read_csv(os.path.join(self.ROOT_DIR, name))
-            df.columns = df.columns.str.lower()
+            stock_name = name.split('_')[0].upper()
+            if stock_name in symbol_or_symbols:
+                df = pd.read_csv(os.path.join(self.ROOT_DIR, name))
+                df.columns = df.columns.str.lower()
 
-            df['date'] = pd.to_datetime(df['date'])
-            df['date'] = df['date'].apply(lambda x: x.replace(hour=13, minute=0, second=0, microsecond=0))
-            df['date'] = df['date'].dt.tz_localize(Constants.Data.EASTERN_TZ)
+                df['date'] = pd.to_datetime(df['date'])
+                df['date'] = df['date'].apply(lambda x: x.replace(hour=13, minute=0, second=0, microsecond=0))
+                df['date'] = df['date'].dt.tz_localize(Constants.Data.EASTERN_TZ)
 
-            df['ask_price'] = 0
-            df['bid_price'] = 0
+                df['ask_price'] = 0
+                df['bid_price'] = 0
 
-            asset_df = df.loc[(df['date'] >= start) & (df['date'] <= end)]
-            if len(asset_df) > 0:
-                asset_dfs[name.split('_')[0].upper()] = asset_df
-            else: 
-                logging.warning(f"No data found for {name} between {start} and {end}")
+                asset_df = df.loc[(df['date'] >= start) & (df['date'] <= end)]
+                if len(asset_df) > 0:
+                    asset_dfs[stock_name] = asset_df
+                else: 
+                    logging.warning(f"No data found for {stock_name} between {start} and {end}")
 
         return asset_dfs
 

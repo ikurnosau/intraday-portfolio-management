@@ -63,6 +63,17 @@ class Constants:
             "WMT"   # Walmart
         ]
 
+        DJIA_2000_2004 = sorted("MMM, AXP, XOM, GE, T, BA, CAT, MO, C, KO, DIS, AA, HD, EK, IBM, JNJ, JPM, MCD, MRK, MSFT, HON, INTC, PG, UTX, DD, GM, T, IP, HPQ, WMT".split(', '))
+        DJIA_2004_2008 = sorted("MMM, AXP, XOM, GE, T, BA, CAT, MO, C, KO, DIS, AA, HD, PFE, IBM, JNJ, JPM, MCD, MRK, MSFT, HON, INTC, PG, UTX, DD, GM, AIG, VZ, HPQ, WMT".split(', '))
+        DJIA_2008_2008 = sorted("MMM, AXP, XOM, GE, T, BA, CAT, CVX, C, KO, DIS, AA, HD, PFE, IBM, JNJ, JPM, MCD, MRK, MSFT, BAC, INTC, PG, UTX, DD, GM, AIG, VZ, HPQ, WMT".split(', '))
+        DJIA_2008_2009 = sorted("MMM, AXP, XOM, GE, T, BA, CAT, CVX, C, KO, DIS, AA, HD, PFE, IBM, JNJ, JPM, MCD, MRK, MSFT, BAC, INTC, PG, UTX, DD, GM, KFT, VZ, HPQ, WMT".split(', '))
+        DJIA_2009_2012 = sorted("MMM, AXP, XOM, GE, T, BA, CAT, CVX, CSCO, KO, DIS, AA, HD, PFE, IBM, JNJ, JPM, MCD, MRK, MSFT, BAC, INTC, PG, UTX, DD, TRV, KFT, VZ, HPQ, WMT".split(', '))
+        DJIA_2012_2013 = sorted("MMM, AXP, XOM, GE, T, BA, CAT, CVX, CSCO, KO, DIS, AA, HD, PFE, IBM, JNJ, JPM, MCD, MRK, MSFT, BAC, INTC, PG, UTX, DD, TRV, UNH, VZ, HPQ, WMT".split(', '))
+        DJIA_2013_2015 = sorted("MMM, AXP, XOM, GE, T, BA, CAT, CVX, CSCO, KO, DIS, GS, HD, PFE, IBM, JNJ, JPM, MCD, MRK, MSFT, NKE, INTC, PG, UTX, DD, TRV, UNH, VZ, V, WMT".split(', '))
+        DJIA_2015_2017 = sorted("MMM, AXP, XOM, GE, AAPL, BA, CAT, CVX, CSCO, KO, DIS, GS, HD, PFE, IBM, JNJ, JPM, MCD, MRK, MSFT, NKE, INTC, PG, UTX, DD, TRV, UNH, VZ, V, WMT".split(', '))
+        DJIA_2017_2018 = sorted("MMM, AXP, XOM, GE, AAPL, BA, CAT, CVX, CSCO, KO, DIS, GS, HD, PFE, IBM, JNJ, JPM, MCD, MRK, MSFT, NKE, INTC, PG, UTX, DWDP, TRV, UNH, VZ, V, WMT".split(', '))
+        DJIA_2018_2019 = sorted("MMM, AXP, XOM, WBA, AAPL, BA, CAT, CVX, CSCO, KO, DIS, GS, HD, PFE, IBM, JNJ, JPM, MCD, MRK, MSFT, NKE, INTC, PG, UTX, DWDP, TRV, UNH, VZ, V, WMT".split(', '))
+
         EASTERN_TZ = ZoneInfo("America/New_York")
 
         REGULAR_TRADING_HOURS_START = pd.to_datetime("9:30:00" ).time()
