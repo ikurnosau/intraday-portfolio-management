@@ -28,7 +28,7 @@ def _download_folder_from_gdrive(folder_id: str, output_dir: str, folder_name: s
 
 def _download_from_gdrive():
     _download_folder_from_gdrive(
-        folder_id= "1PqNzu2bYcGZkpSgIPNo-F3cw9weGJZwW",
+        folder_id= "1wUeVf7rCWwqjSrv6mC03XreupUnvv3sC",
         output_dir='../data/raw/stooq/bars',
         folder_name="djia_all"
     )
