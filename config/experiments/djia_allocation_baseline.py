@@ -49,9 +49,9 @@ data_config = DataConfig(
     # val_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
 
     start=datetime(1970, 1, 2, tzinfo=Constants.Data.EASTERN_TZ),
-    end=datetime(2001, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    end=datetime(2019, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
     train_set_last_date=datetime(1999, 1, 1, tzinfo=Constants.Data.EASTERN_TZ), 
-    val_set_last_date=datetime(2000, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    val_set_last_date=datetime(2009, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
 
     features_polars={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------
@@ -117,7 +117,7 @@ model_config = ModelConfig(
         lstm_layers=1,
         bidirectional=True,
         dropout=0.2,
-        num_heads=2,
+        num_heads=1,
         use_spatial_attention=True,
         num_assets=len(data_config.symbol_or_symbols),
         asset_embed_dim=8,
@@ -133,7 +133,7 @@ cur_optimizer = torch.optim.AdamW(
 )
 
 train_config = TrainConfig(
-    loss_fn=RiskAdjustedPositionReturnLoss(fee=0.001, risk_lambda=2.),
+    loss_fn=RiskAdjustedPositionReturnLoss(fee=0.001, risk_lambda=1.5),
     optimizer=cur_optimizer,
     scheduler={
         "type": "OneCycleLR",

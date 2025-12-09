@@ -28,18 +28,19 @@ from modeling.models.tcn import TCN
 from modeling.models.tsa_allocator import TSAllocator
 from modeling.models.tcn import TCNPredictor
 from modeling.models.tst import TimeSeriesTransformer
-from modeling.loss import PositionReturnLoss, position_return_loss_with_entropy
-from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression
+from modeling.loss import PositionReturnLoss, position_return_loss_with_entropy, RiskAdjustedPositionReturnLoss
+from modeling.metrics import accuracy_multi_asset, accuracy, rmse_regression, MeanReturn
 from core_data_prep.validations import Validator
 
 
-frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Minute)
-horizon = 1
-target = TripleClassification(horizon=horizon, base_feature='close')
+frequency = TimeFrame(amount=1, unit=TimeFrameUnit.Day)
+horizon = 30
+target = ReturnOverHorizon(horizon=horizon, base_feature='close')
 
 data_config = DataConfig(
-    retriever=AlpacaMarketsRetriever(download_from_gdrive=False, timeframe=frequency),
-    symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
+    retriever=StooqRetriever(download_from_gdrive=False),
+
+    symbol_or_symbols=Constants.Data.DJIA,
     frequency=frequency,
 
     # start=datetime(2024, 6, 1, tzinfo=timezone.utc),
@@ -47,10 +48,10 @@ data_config = DataConfig(
     # train_set_last_date=datetime(2025, 4, 1, tzinfo=timezone.utc),
     # val_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
 
-    start=datetime(2024, 9, 1, tzinfo=Constants.Data.EASTERN_TZ),
-    end=datetime(2025, 10, 1, tzinfo=Constants.Data.EASTERN_TZ),
-    train_set_last_date=datetime(2025, 7, 1, tzinfo=Constants.Data.EASTERN_TZ), 
-    val_set_last_date=datetime(2025, 8, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    start=datetime(1970, 1, 2, tzinfo=Constants.Data.EASTERN_TZ),
+    end=datetime(2019, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    train_set_last_date=datetime(1999, 1, 1, tzinfo=Constants.Data.EASTERN_TZ), 
+    val_set_last_date=datetime(2009, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
 
     features_polars={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------
@@ -103,23 +104,23 @@ data_config = DataConfig(
     in_seq_len=60,
     horizon=horizon,
     multi_asset_prediction=True,
-    
+
     validator=None, #Validator(),
 )
 
 
 model_config = ModelConfig(
-    model=TemporalSpatial(
+    model=TSAllocator(
         input_dim=len(data_config.features_polars),
         output_dim=1,  # regression
-        hidden_dim=128,
-        lstm_layers=2,
+        hidden_dim=64,
+        lstm_layers=1,
         bidirectional=True,
         dropout=0.2,
-        num_heads=4,
+        num_heads=1,
         use_spatial_attention=True,
         num_assets=len(data_config.symbol_or_symbols),
-        asset_embed_dim=16,
+        asset_embed_dim=0,
     ),
     registered_model_name="TemporalSpatial Regressor",
 )
@@ -127,12 +128,12 @@ model_config = ModelConfig(
 cur_optimizer = torch.optim.AdamW(
     model_config.model.parameters(),
     lr=1e-3,
-    weight_decay=1e-10,
+    weight_decay=1e-2,
     amsgrad=True,
 )
 
 train_config = TrainConfig(
-    loss_fn=torch.nn.MSELoss(),
+    loss_fn=RiskAdjustedPositionReturnLoss(fee=0.001, risk_lambda=1.5),
     optimizer=cur_optimizer,
     scheduler={
         "type": "OneCycleLR",
@@ -143,7 +144,7 @@ train_config = TrainConfig(
         "anneal_strategy": "cos",
         "cycle_momentum": False,
     },
-    metrics={"rmse": rmse_regression},
+    metrics={"log_return": PositionReturnLoss(fee=0.001), "mean_return": MeanReturn(fee=0.001)},
     num_epochs=20,
     early_stopping_patience=10,
 
@@ -156,15 +157,15 @@ train_config = TrainConfig(
     prefetch_factor=4,
     pin_memory=True,
     persistent_workers=True,
-    drop_last=True,
+    drop_last=False,
     
     save_path="",
 )
 
 rl_config = RLConfig(
     trajectory_length=12,
-    fee=0.0,
-    spread_multiplier=0.67,
+    fee=0.001,
+    spread_multiplier=0.0,
     trade_asset_count=1,
 )
 

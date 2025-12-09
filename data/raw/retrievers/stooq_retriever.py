@@ -48,9 +48,9 @@ class StooqRetriever:
         end = pd.to_datetime(end)
 
         asset_dfs = {}
-        for name in os.listdir(self.ROOT_DIR):
-            stock_name = name.split('_')[0].upper()
-            if stock_name in symbol_or_symbols:
+        for stock_name in symbol_or_symbols:
+            name = f'{stock_name.lower()}_us_d.csv'
+            if name in os.listdir(self.ROOT_DIR):
                 df = pd.read_csv(os.path.join(self.ROOT_DIR, name))
                 df.columns = df.columns.str.lower()
 
@@ -66,6 +66,10 @@ class StooqRetriever:
                     asset_dfs[stock_name] = asset_df
                 else: 
                     logging.warning(f"No data found for {stock_name} between {start} and {end}")
+            else: 
+                logging.warning(f"No data found for {name} in root folder")
+
+        logging.info(f"retrieved {len(asset_dfs)} assets")
 
         return asset_dfs
 
