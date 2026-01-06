@@ -12,7 +12,6 @@ class State:
 
     _position_difference: dict[str: float]
     _buy_positions: dict[str: float]
-    _buy_cash_percentage: float
     _buy_cash_per_asset: dict[str: float]
     _sell_positions: dict[str: float]
     _sell_percentage_per_share: dict[str: float]

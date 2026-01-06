@@ -9,6 +9,7 @@ from alpaca.trading.enums import OrderSide, TimeInForce, OrderStatus
 from alpaca.trading.stream import TradingStream
 
 from core_inference.brokerage_proxies.base_brokerage_proxy import BaseBrokerageProxy
+from core_inference.models.position import Position
 
 
 class AlpacaBrokerageProxy(BaseBrokerageProxy):
@@ -54,9 +55,10 @@ class AlpacaBrokerageProxy(BaseBrokerageProxy):
         self.trading_client.close_all_positions()
         logging.info("All positions closed")
 
-    def get_shares_hold(self) -> dict[str: float]:
+    def get_all_positions(self) -> dict[str: Position]:
         open_positions = self.trading_client.get_all_positions()
-        return {position.symbol: float(position.qty) for position in open_positions}
+        return {position.symbol: Position(quantity=float(position.qty), current_price=float(position.current_price)) \
+            for position in open_positions}
 
     def _wait_for_fill(self, order_id: str):
         """

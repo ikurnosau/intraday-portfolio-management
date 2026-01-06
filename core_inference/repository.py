@@ -40,15 +40,15 @@ class Repository:
     def add_bar(self, data: dict[str: Any]):
         self.bars_and_quotes[data["symbol"]].loc[len(self.bars_and_quotes[data["symbol"]])] = {
             "open": data["open"],
-            "high": data.high,
+            "high": data["high"],
             "low": data["low"],
             "close": data["close"],
             "volume": data["volume"],
             "date": data["date"], 
-            "bid_price": self.bid_price[data.symbol],
-            "bid_size": self.bid_size[data.symbol],
-            "ask_price": self.ask_price[data.symbol],
-            "ask_size": self.ask_size[data.symbol],
+            "bid_price": data['bid_price'] if 'bid_price' in data else self.bid_price[data["symbol"]],
+            "bid_size": data['bid_size'] if 'bid_size' in data else self.bid_size[data["symbol"]],
+            "ask_price": data['ask_price'] if 'ask_price' in data else self.ask_price[data["symbol"]],
+            "ask_size": data['ask_size'] if 'ask_size' in data else self.ask_size[data["symbol"]],
         }
 
     def update_quote(self, data):
@@ -59,6 +59,9 @@ class Repository:
 
     def get_asset_dfs(self) -> dict[str: pd.DataFrame]:
         return {symbol: self.bars_and_quotes[symbol].tail(self.required_history_depth) for symbol in self.symbols}
+
+    def get_latest_asset_data(self, symbol: str) -> dict[str: pd.Series]:
+        return self.bars_and_quotes[symbol].iloc[-1]
 
     def get_bid_price(self, symbol):
         return self.bid_price[symbol]

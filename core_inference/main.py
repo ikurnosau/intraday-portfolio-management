@@ -36,6 +36,7 @@ repository = Repository(
     required_history_depth=config.data_config.in_seq_len + config.data_config.normalizer.get_window() + 30,
 )
 brokerage_proxy = AlpacaBrokerageProxy()
+backtest_proxy = BacktestBrokerageProxy(repository, config.rl_config.spread_multiplier)
 trader = Trader(brokerage_proxy)
 quotes_response_handler = QuotesResponseHandler(repository)
 bars_response_handler = BarsResponseHandler(trader, repository)

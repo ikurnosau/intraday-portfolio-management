@@ -43,8 +43,9 @@ class BarsResponseHandler:
 
     async def identify_last_event(self):
         try:
+            # TODO: 
+            # here I should add a logic which would check with repo if all bars where updated, then no need to wait
             await asyncio.sleep(self.DEBOUNCE_DELAY)
-            # No new events received within debounce_delay, trigger processing
             self.trader.perform_trading_cycle()
         except asyncio.CancelledError:
             pass
