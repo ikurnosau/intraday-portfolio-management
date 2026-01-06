@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import torch
 import torch.nn as nn
 # numpy not required; using torch.topk instead
@@ -25,9 +26,10 @@ class SignalPredictorAllocator(nn.Module):
         signal_repr = self.signal_predictor(signal_features)
         # Re-center predictor output: values >0 ⇒ long, <0 ⇒ short
         ls_score = signal_repr - 0.5  # (B, n_assets)
+        if not self.allow_short_positions:
+            ls_score = ls_score.clamp(min=0) + 1e-5
 
-        # Select assets with largest absolute score
-        _, top_idx = (ls_score.abs() if self.allow_short_positions else ls_score).topk(self.trade_asset_count, dim=1)  # (B, K)
+        _, top_idx = ls_score.abs().topk(self.trade_asset_count, dim=1)  # (B, K)
         mask = torch.zeros_like(ls_score, dtype=torch.bool)
         mask.scatter_(1, top_idx, True)
 
