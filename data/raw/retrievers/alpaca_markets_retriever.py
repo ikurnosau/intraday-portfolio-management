@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import os
 import pickle 
 import numpy as np
+import logging
 
 from config.constants import Constants
 from data.processed.data_processing_utils import convert_to_eastern
@@ -197,8 +198,10 @@ class AlpacaMarketsRetriever:
             df = pd.DataFrame([data_item.__dict__ for data_item in stock_data]).tail(limit).reset_index(drop=True) \
                     .drop(columns=['symbol', 'trade_count']) \
                     .rename(columns={'timestamp': 'date'})
-            assert len(df) == limit, f"Not enough bars for pulled for {symbol} to satisfy the limit of {limit}; pulled {pull_n_days} days and got {len(df)} bars."
-            # Convert to Eastern Time
+            if len(df) < limit:
+                logging.warning(f"Not enough bars for pulled for {symbol} to satisfy the limit of {limit}; pulled {pull_n_days} days and got {len(df)} bars.")
+                continue
+
             df = convert_to_eastern(df, 'date')
             response[symbol] = df
         return response
