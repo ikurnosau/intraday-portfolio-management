@@ -30,6 +30,33 @@ class Constants:
             'VOO', 'WFC', 'XBI', 'XLC', 'XLE', 'XLI', 
             'XLK', 'XLU', 'XLV', 'XLY', 'XOM', 'XRT']
 
+        LOWEST_VOL_TO_COST_50_DEC_2025 = [
+            'AAPL', 'AMD', 'AMZN', 'AVGO', 'CIFR', 'DIA', 'FBTC', 
+            'GBTC', 'GDX', 'GLD', 'GOOG', 'GOOGL', 'IBIT', 'IGV', 
+            'IJR', 'INTC', 'IREN', 'IVV', 'IWD', 'IWM', 'META', 
+            'MSFT', 'NVDA', 'PLTR', 'QLD', 'QQQ', 'QQQM', 'RGTI', 
+            'RSP', 'SMCI', 'SMH', 'SOFI', 'SOXL', 'SOXX', 'SPXL', 
+            'SPY', 'TNA', 'TQQQ', 'TSLA', 'UPRO', 'VOO', 'VTI', 
+            'VTV', 'XBI', 'XLE', 'XLI', 'XLK', 'XLV', 'XLY', 'XOM'
+        ]
+
+        LOWEST_VOL_TO_COST_100_DEC_2025 = [
+            'AAPL', 'ACWI', 'AMD', 'AMZN', 'APLD', 'AVGO', 'BAC', 
+            'BITB', 'BITU', 'BMY', 'BOIL', 'C', 'CIFR', 'CLSK', 
+            'CSCO', 'DIA', 'DKNG', 'ETHA', 'EWY', 'FBTC', 'GBTC', 
+            'GDX', 'GLD', 'GOOG', 'GOOGL', 'HOOD', 'IBIT', 'IGV', 
+            'IJR', 'INTC', 'IONQ', 'IREN', 'ITOT', 'IVV', 'IVW', 
+            'IWD', 'IWM', 'IYR', 'KO', 'KRE', 'MARA', 'META', 'MRK', 
+            'MRVL', 'MSFT', 'MSTR', 'MU', 'NFLX', 'NKE', 'NVDA', 
+            'NVO', 'ORCL', 'PLTR', 'PYPL', 'QBTS', 'QLD', 'QQQ', 
+            'QQQM', 'QUAL', 'RGTI', 'RIOT', 'RSP', 'SLV', 'SMCI', 
+            'SMH', 'SMR', 'SOFI', 'SOXL', 'SOXX', 'SPXL', 'SPY', 
+            'SPYG', 'SSO', 'TNA', 'TQQQ', 'TSLA', 'TSM', 'UBER', 
+            'UPRO', 'VONG', 'VOO', 'VT', 'VTI', 'VTV', 'VTWO', 
+            'VYM', 'WFC', 'WMT', 'WULF', 'XBI', 'XLB', 'XLC', 
+            'XLE', 'XLI', 'XLK', 'XLU', 'XLV', 'XLY', 'XOM', 'XRT'
+        ]
+
         DJIA = [
             "MMM",  # 3M
             "AXP",  # American Express

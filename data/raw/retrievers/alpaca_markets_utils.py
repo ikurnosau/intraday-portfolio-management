@@ -1,9 +1,16 @@
 import pandas as pd
 from datetime import timedelta, datetime
 import numpy as np
-import time
 import os
 import gdown
+from pandas.tseries.holiday import USFederalHolidayCalendar
+import logging
+import math
+import asyncio
+
+from data.raw.retrievers.alpaca_markets_retriever import AlpacaMarketsRetriever
+from config.constants import *
+
 
 
 def _download_file_from_gdrive(file_id: str, output_dir: str, file_name: str):
@@ -36,80 +43,186 @@ def _download_from_gdrive():
     )
 
 
-def get_stock_stats(retriever, symbols, stats_start_date, stats_end_date):
-    rng = pd.date_range(start=stats_start_date,
-                        end=stats_end_date,
-                        freq="5h",
-                        tz="UTC",          # optional – adds timezone info
-                        inclusive="left")  # include start, exclude end
+def get_quotes_snapshot(retriever: AlpacaMarketsRetriever, symbols: list[str], date: datetime, verbose: bool=False): 
+    left_symbols = set(symbols)
+    seconds_lookback = 2
+    quotes = {}
+    while len(left_symbols) > 0:
+        if seconds_lookback > 1000: 
+            quotes |= {symbol: None for symbol in left_symbols}
+            break
 
-    df = pd.DataFrame({"date": rng})
+        if verbose:
+            print(f"Getting quotes for {len(left_symbols)} symbols")
 
-    from data.processed.data_processing_utils import filter_by_regular_hours
-    df = filter_by_regular_hours(df, 'date')
-    df['date'] = pd.to_datetime(df['date'])
+        start_date = date - timedelta(seconds=seconds_lookback)
+        result = retriever.quotes(
+            left_symbols, 
+            start = start_date, 
+            end = date, 
+            limit=10000
+        )
+
+        cur_quotes = {symbol: result[symbol][-1] for symbol in result}
+        quotes |= cur_quotes
+        left_symbols = left_symbols - set(cur_quotes.keys())
+
+        total_records_in_result = sum(len(value) for value in result.values())
+        if total_records_in_result < 10000:
+            seconds_lookback *= 4
+
+    return quotes
+
+
+def _daily_MoAD(asset_df: pd.DataFrame, periods: int):
+    if len(asset_df) <= periods:
+        return np.nan
+    return asset_df['close'].diff(periods=periods).abs().dropna().median()
+
+def _daily_volume(asset_df: pd.DataFrame):
+    return asset_df['volume'].sum() / len(asset_df) * 390
+
+def _slippage(asset_df, usd_order_size=30000, Y=1.0):
+    current_price = asset_df['close'].iloc[-1]
+    Q = usd_order_size / current_price
+
+    daily_volume = _daily_volume(asset_df)
+    
+    log_returns = np.log(asset_df['close'] / asset_df['close'].shift(1))
+    sigma_1m = log_returns.std()
+    sigma_daily = sigma_1m * np.sqrt(390)
+
+    impact_pct = Y * sigma_daily * np.sqrt(Q / daily_volume)
+    slippage_usd = impact_pct * current_price
+    
+    return slippage_usd
+
+def _daily_stats_call(symbols, date: datetime, quotes_timestamps: list[datetime.time]):
+    retriever = AlpacaMarketsRetriever()
+
+    quotes_snapshots = [
+        get_quotes_snapshot(retriever, symbols, pd.Timestamp.combine(date, time_part).tz_localize(Constants.Data.EASTERN_TZ).to_pydatetime())
+            for time_part in quotes_timestamps
+    ]
+    spreads  = {
+        symbol: [quotes_snapshot[symbol].ask_price - quotes_snapshot[symbol].bid_price 
+            for quotes_snapshot in quotes_snapshots if quotes_snapshot[symbol] is not None]
+                for symbol in symbols
+    }
+    median_spreads = {
+        symbol: np.median(symbol_spreads)
+            for symbol, symbol_spreads in spreads.items()
+                if len(symbol_spreads) > 0
+    }
+
+    if len(median_spreads.keys()) == 0:
+        1 / 0
+
+    bars = retriever.bars(
+        median_spreads.keys(), 
+        start = pd.Timestamp.combine(date, pd.to_datetime("9:30:00").time()).tz_localize(Constants.Data.EASTERN_TZ).to_pydatetime(), 
+        end = pd.Timestamp.combine(date, pd.to_datetime("16:00:00").time()).tz_localize(Constants.Data.EASTERN_TZ).to_pydatetime(), 
+        save_dir=None
+    )
 
     symbol_stats = {}
-    for i, symbol in enumerate(symbols): 
-        if i % 10 == 0:
-            print(f"Processing ({i}/{len(symbols)})")
+    skipped_symbols = []
+    for symbol in bars: 
+        cur_symbol_stats = {
+            'spread': median_spreads[symbol],
+            'slippage': _slippage(bars[symbol], 30000, 1.0),
+            'moad_1m': _daily_MoAD(bars[symbol], 1),
+            'moad_5m': _daily_MoAD(bars[symbol], 5),
+            'moad_15m': _daily_MoAD(bars[symbol], 15),
+            'moad_1h': _daily_MoAD(bars[symbol], 60),
+            'daily_volume': _daily_volume(bars[symbol]),
+            'price': bars[symbol]['close'].iloc[-1]
+        }    
 
-        quotes = []
-        for start_date in df['date']:
-            end_date = start_date + timedelta(hours=1)
-            attempts = 0
-            retrieval_result = {}
-            while attempts < 2:
-                try:
-                    retrieval_result = retriever.quotes(symbol, start_date, end_date, limit=1)
-                    break
-                except Exception as e:
-                    attempts += 1
-                    if attempts >= 2:
-                        print(f"Failed to retrieve quotes for {symbol} between {start_date} and {end_date} after {attempts} attempts: {e}")
-                    else:
-                        time.sleep(5)
-            if symbol in retrieval_result:
-                quotes.append(retrieval_result[symbol][0])
+        if all(math.isfinite(value) for value in cur_symbol_stats.values()):
+            cur_symbol_stats['E_1m'] = cur_symbol_stats['moad_1m'] / (cur_symbol_stats['spread'] + cur_symbol_stats['slippage'] + 1e-6)
+            cur_symbol_stats['E_5m'] = cur_symbol_stats['moad_5m'] / (cur_symbol_stats['spread'] + cur_symbol_stats['slippage'] + 1e-6)
+            cur_symbol_stats['E_15m'] = cur_symbol_stats['moad_15m'] / (cur_symbol_stats['spread'] + cur_symbol_stats['slippage'] + 1e-6)
+            cur_symbol_stats['E_1h'] = cur_symbol_stats['moad_1h'] / (cur_symbol_stats['spread'] + cur_symbol_stats['slippage'] + 1e-6)
 
-        avg_spread = np.mean([(quote.ask_price - quote.bid_price) / quote.ask_price for quote in quotes])
+            symbol_stats[symbol] = cur_symbol_stats
+        else: 
+            skipped_symbols.append(symbol)
 
-        bars_retrieval_result = retriever.bars(symbol, pd.to_datetime(stats_start_date), pd.to_datetime(stats_end_date))
-        if symbol in bars_retrieval_result:
-            bars_df = filter_by_regular_hours(bars_retrieval_result[symbol], 'date')
-            bars_df['date'] = pd.to_datetime(bars_df['date'])
+    return symbol_stats, skipped_symbols
 
-            # Helper to compute volatility for a single day after skipping first 10 minutes
-            def _daily_vol(group: pd.DataFrame, periods: int):
-                group_sorted = group.sort_values('date')
-                # Skip the first 10 minutes (assumes 1-minute bars)
-                group_trimmed = group_sorted.iloc[10:]
-                # If there is not enough data after trimming, return NaN
-                if len(group_trimmed) <= periods:
-                    return np.nan
-                return group_trimmed['close'].pct_change(periods=periods).std()
+async def get_daily_stats(symbols: list[str], 
+                          date: datetime, 
+                          symbols_per_call: int=100, 
+                          semaphore: asyncio.Semaphore=asyncio.Semaphore(20),
+                          quotes_timestamps: list[datetime.time] = [
+                              pd.to_datetime("10:00:00").time(),
+                              pd.to_datetime("11:30:00").time(),
+                              pd.to_datetime("13:30:00").time(),
+                              pd.to_datetime("15:00:00").time(),
+                              pd.to_datetime("15:45:00").time()
+                          ]
+    ):
+    async def run(symbols):
+        async with semaphore:
+            return await asyncio.to_thread(_daily_stats_call, symbols, date, quotes_timestamps)
 
-            vol_1m_list, vol_5m_list, vol_15m_list, vol_1h_list = [], [], [], []
+    tasks = [run(symbols[i:min(i + symbols_per_call, len(symbols))]) for i in range(0, len(symbols), symbols_per_call)]
+    results = await asyncio.gather(*tasks)
 
-            for _, day_group in bars_df.groupby(bars_df['date'].dt.date):
-                vol_1m_list.append(_daily_vol(day_group, 1))
-                vol_5m_list.append(_daily_vol(day_group, 5))
-                vol_15m_list.append(_daily_vol(day_group, 15))
-                vol_1h_list.append(_daily_vol(day_group, 60))
+    daily_stats = {}
+    skipped_symbols = []
+    for cur_daily_stats, cur_skipped_symbols in results:
+        daily_stats |= cur_daily_stats
+        skipped_symbols += cur_skipped_symbols
 
-            # Average the daily volatilities, ignoring NaNs
-            volatility_1m = np.nanmean(vol_1m_list)
-            volatility_5m = np.nanmean(vol_5m_list)
-            volatility_15m = np.nanmean(vol_15m_list)
-            volatility_1h = np.nanmean(vol_1h_list)
+    return daily_stats, skipped_symbols
 
-            symbol_stats[symbol] = {
-                'avg_spread': avg_spread,
-                'volatility_1m': volatility_1m,
-                'volatility_5m': volatility_5m,
-                'volatility_15m': volatility_15m,
-                'volatility_1h': volatility_1h,
-                'quotes': quotes
-            }    
 
-    return symbol_stats
+async def select_portfolio(
+    symbols: list[str], 
+    start_date: datetime, 
+    end_date: datetime, 
+    portfolio_size: int = 100,
+    criteria: str = 'E_1m',
+    max_retries: int = 3
+):
+    calendar = USFederalHolidayCalendar()
+    holidays = calendar.holidays(start=start_date, end=end_date)
+    all_b_days = pd.bdate_range(start=start_date, end=end_date)
+    business_days = all_b_days[~all_b_days.isin(holidays)]
+
+    performance_matrix = {symbol: [] for symbol in symbols}
+    
+    logging.info(f"Starting performance sweep for {len(business_days)} days...")
+
+    for day in business_days:
+        logging.info(f"Processing day {day}")
+        daily_data = {}
+        
+        for attempt in range(max_retries):
+            try:
+                daily_data, skipped_symbols = await get_daily_stats(symbols, day.to_pydatetime())
+                break 
+                
+            except (Exception) as e:
+                wait_time = (attempt + 1) * 5  # 5s, 10s, 15s
+                logging.warning(f"Error on {day.date()} (Attempt {attempt+1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    logging.info(f"Retrying in {wait_time} seconds...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logging.error(f"Failed to retrieve data for {day.date()} after {max_retries} attempts. Skipping.")
+
+        for symbol in symbols:
+            val = daily_data.get(symbol, {}).get(criteria, 0)
+            performance_matrix[symbol].append(val if np.isfinite(val) else 0)
+
+    final_scores = []
+    for symbol, scores in performance_matrix.items():
+        q25_value = np.percentile(scores, 25)
+        final_scores.append((symbol, q25_value))
+
+    final_scores.sort(key=lambda x: x[1], reverse=True)
+    
+    return final_scores[:portfolio_size]
