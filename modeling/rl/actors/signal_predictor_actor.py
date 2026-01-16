@@ -6,6 +6,7 @@ import torch.nn as nn
 
 from ..state import State
 from .base_actor import BaseActor
+import logging
 
 
 class SignalPredictorActor(nn.Module, BaseActor):
@@ -41,17 +42,24 @@ class SignalPredictorActor(nn.Module, BaseActor):
         # Re-center predictor output: values >0 ⇒ long, <0 ⇒ short
         ls_score = signal_repr - 0.5  # (B, n_assets)
 
-        batch_size, n_assets = ls_score.shape
+        _, n_assets = ls_score.shape
 
         # Narrow investable universe to the assets with the highest "energy_to_friction":
         # volatility / spread (higher is better).
+        valid_spread = torch.isfinite(state.spread) & (state.spread > 0)
         ratio = state.volatility / (state.spread + 1e-8)  # (B, n_assets)
+        ratio = ratio.masked_fill(~valid_spread, float("-inf"))
         n_best = n_assets if self.select_from_n_best is None else min(self.select_from_n_best, n_assets)
         n_best = max(int(n_best), 1)
 
         _, best_idx = torch.topk(ratio, k=n_best, dim=1)  # (B, n_best)
         universe_mask = torch.zeros_like(ls_score, dtype=torch.bool)
         universe_mask.scatter_(1, best_idx, True)
+        # If a row has no valid spreads, bypass the universe narrowing entirely for that row.
+        valid_any = valid_spread.any(dim=1)  # (B,)
+        if (~valid_any).any():
+            universe_mask[~valid_any] = True
+            logging.warning("Some rows had no valid spreads; universe narrowing disabled for those rows.")
 
         # Select assets with largest absolute score, but only from this narrowed universe
         k = min(self.trade_asset_count, n_best)
