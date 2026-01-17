@@ -39,7 +39,7 @@ target = TripleClassification(horizon=horizon, base_feature='close')
 
 data_config = DataConfig(
     retriever=AlpacaMarketsRetriever(download_from_gdrive=False, timeframe=frequency),
-    symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
+    symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_COST_100_DEC_2025,
     frequency=frequency,
 
     # start=datetime(2024, 6, 1, tzinfo=timezone.utc),
@@ -47,10 +47,10 @@ data_config = DataConfig(
     # train_set_last_date=datetime(2025, 4, 1, tzinfo=timezone.utc),
     # val_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
 
-    start=datetime(2024, 9, 1, tzinfo=Constants.Data.EASTERN_TZ),
-    end=datetime(2025, 10, 1, tzinfo=Constants.Data.EASTERN_TZ),
-    train_set_last_date=datetime(2025, 7, 1, tzinfo=Constants.Data.EASTERN_TZ), 
-    val_set_last_date=datetime(2025, 8, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    start=datetime(2024, 11, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    end=datetime(2026, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    train_set_last_date=datetime(2025, 10, 1, tzinfo=Constants.Data.EASTERN_TZ), 
+    val_set_last_date=datetime(2025, 11, 1, tzinfo=Constants.Data.EASTERN_TZ),
 
     features_polars={
         # --- Raw micro-price & volume dynamics ------------------------------------------------------
@@ -164,8 +164,9 @@ train_config = TrainConfig(
 rl_config = RLConfig(
     trajectory_length=12,
     fee=0.0,
-    spread_multiplier=0.67,
+    spread_multiplier=1.,
     trade_asset_count=1,
+    choose_from_n_best=95,
 )
 
 observability_config = ObservabilityConfig(

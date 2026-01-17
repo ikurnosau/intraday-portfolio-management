@@ -75,6 +75,7 @@ class RLConfig:
     fee: float
     spread_multiplier: float
     trade_asset_count: int
+    choose_from_n_best: int
 
 
 @dataclass
