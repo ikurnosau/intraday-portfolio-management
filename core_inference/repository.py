@@ -68,3 +68,6 @@ class Repository:
 
     def get_ask_price(self, symbol):
         return self.ask_price[symbol]
+
+    def get_symbols(self) -> list[str]:
+        return self.symbols

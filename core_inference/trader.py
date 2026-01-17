@@ -11,16 +11,17 @@ from core_data_prep.core_data_prep import DataPreparer
 from core_inference.brokerage_proxies.base_brokerage_proxy import BaseBrokerageProxy
 from core_inference.repository import Repository
 from core_inference.models.state import State
-from core_inference.models.position import Position
 
 
 class Trader:
     def __init__(self, 
+                 order_size_notional: float,
                  data_preparer: DataPreparer,
                  features: dict[str, Callable],
                  brokerage_proxy: BaseBrokerageProxy,
                  repository: Repository,
                  portfolio_allocator: nn.Module):
+        self.order_size_notional = order_size_notional
         self.data_preparer = data_preparer
         self.features = features
         self.repository = repository
@@ -39,17 +40,9 @@ class Trader:
 
         self.states_history: list[State] = [
             State(
-                desired_position={symbol: 0.0 for symbol in self.repository.symbols},
-                position={symbol: 0.0 for symbol in self.repository.symbols},
-                available_cash=self.brokerage_proxy.get_cash_balance() / 2,
-                shares_hold={symbol: 0.0 for symbol in self.repository.symbols},
-
-                _position_difference={symbol: 0.0 for symbol in self.repository.symbols},
-                _buy_positions={symbol: 0.0 for symbol in self.repository.symbols},
-                _buy_cash_per_asset={symbol: 0.0 for symbol in self.repository.symbols},
-                _sell_positions={symbol: 0.0 for symbol in self.repository.symbols},
-                _sell_percentage_per_share={symbol: 0.0 for symbol in self.repository.symbols},
-                _sell_shares_per_asset={symbol: 0.0 for symbol in self.repository.symbols},
+                allocation={symbol: 0.0 for symbol in self.repository.symbols},
+                shares_hold={symbol: 0 for symbol in self.repository.symbols},
+                equity=self.brokerage_proxy.get_equity(),
             )
         ]
 
@@ -70,45 +63,50 @@ class Trader:
         logging.info("Running portfolio allocator...")
         with torch.inference_mode(), torch.amp.autocast(device_type="cuda", enabled=torch.cuda.is_available()):
             prediction = self.portfolio_allocator(x).cpu().numpy()
-        new_position = {symbol: prediction[0, i] for i, symbol in enumerate(asset_dfs)}
+        new_allocation = {symbol: prediction[0, i] for i, symbol in enumerate(asset_dfs)}
 
-        logging.info("Calculating position difference...")
+        new_allocation_log = {symbol: new_allocation[symbol] for symbol in new_allocation if new_allocation[symbol] != 0}
+        logging.info(f"New allocation predicted: {new_allocation_log}")
+
+        logging.info("Calculating allocation difference...")
         cur_state = self.states_history[-1]
-        position_difference = {symbol: new_position[symbol] - cur_state.position[symbol] for symbol in new_position}
+        cur_allocation = cur_state.allocation
 
-        buy_positions = {symbol: position_difference[symbol] for symbol in position_difference if position_difference[symbol] > 0}
-        buy_cash_per_asset = {symbol: buy_positions[symbol] * cur_state.available_cash for symbol in buy_positions}
+        enter_orders = {}
+        exit_orders = {}
+        for symbol in self.repository.get_symbols():
+            if cur_allocation[symbol] * new_allocation[symbol] > 0: 
+                abs_difference = abs(new_allocation[symbol]) - abs(cur_allocation[symbol])
+                difference = new_allocation[symbol] - cur_allocation[symbol]
+                if abs_difference > 0:
+                    cash_to_allocate = difference * self.order_size_notional
+                    enter_orders[symbol] =  cash_to_allocate // self.repository.get_latest_asset_data(symbol)['close']
+                elif abs_difference < 0:
+                    proportion_to_liquidate = difference / abs(cur_allocation[symbol])
+                    exit_orders[symbol] = round(cur_state.shares_hold[symbol] * proportion_to_liquidate)
+            else: 
+                if new_allocation[symbol] != 0:
+                    cash_to_allocate = new_allocation[symbol] * self.order_size_notional
+                    enter_orders[symbol] = cash_to_allocate // self.repository.get_latest_asset_data(symbol)['close']
+                if cur_allocation[symbol] != 0:
+                    exit_orders[symbol] = - cur_state.shares_hold[symbol]
 
-        sell_positions = {symbol: - position_difference[symbol] for symbol in position_difference if position_difference[symbol] < 0}
-        sell_percentage_per_share = {symbol: math.ceil((sell_positions[symbol] / cur_state.position[symbol]) * 1e5) / 1e5 for symbol in sell_positions}
-        sell_shares_per_asset = {symbol: cur_state.shares_hold[symbol] * sell_percentage_per_share[symbol] for symbol in sell_positions }
+        logging.info(f"Enter orders: {enter_orders}")
+        logging.info(f"Exit orders: {exit_orders}")
 
-        number_of_tasks = len(buy_positions) + len(sell_positions)
+        number_of_tasks = len(enter_orders) + len(exit_orders)
         if number_of_tasks > 0:
             logging.info("Starting order execution...")
             with ThreadPoolExecutor(max_workers=number_of_tasks) as executor:
-                buy_futures = [executor.submit(self.brokerage_proxy.market_buy_notional, symbol, cash) for symbol, cash in buy_cash_per_asset.items()]
-                sell_futures = [executor.submit(self.brokerage_proxy.market_sell_shares, symbol, shares) for symbol, shares in sell_shares_per_asset.items()]
+                exit_orders = [executor.submit(self.brokerage_proxy.market_shares_order, symbol, shares) for symbol, shares in exit_orders.items()]
+                enter_orders = [executor.submit(self.brokerage_proxy.market_shares_order, symbol, shares) for symbol, shares in enter_orders.items()]
         else:
             logging.info("No orders to execute")
 
         logging.info("Order execution completed!")
 
-        positions = self.brokerage_proxy.get_all_positions()
-        positions = {symbol: positions[symbol] if symbol in positions else Position(quantity=0.0, current_price=0.0) for symbol in new_position}
-        total_value = sum(position.quantity * position.current_price for position in positions.values())
-        executed_position = {symbol: position.quantity * position.current_price / total_value for symbol, position in positions.items()}
-        
         self.states_history.append(State(
-            desired_position=new_position,
-            position=executed_position,
-            available_cash=self.brokerage_proxy.get_cash_balance(),
-            shares_hold={symbol: position.quantity for symbol, position in positions.items()},
-            
-            _position_difference=position_difference,
-            _buy_positions=buy_positions,
-            _buy_cash_per_asset=buy_cash_per_asset,
-            _sell_positions=sell_positions,
-            _sell_percentage_per_share=sell_percentage_per_share,
-            _sell_shares_per_asset=sell_shares_per_asset,
+            allocation=new_allocation,
+            shares_hold=self.brokerage_proxy.get_all_positions(),
+            equity=self.brokerage_proxy.get_equity(),
         ))
