@@ -78,6 +78,17 @@ class AlpacaMarketsRetriever:
                   asset.tradable]
         return [asset.symbol for asset in assets]
 
+    def get_history_depth(self, symbol: str) -> datetime:
+        request_params = StockBarsRequest(
+            symbol_or_symbols=symbol,
+            timeframe=self.timeframe,
+            start=datetime(1900, 1, 1),
+            limit=1,
+            feed=self.FEED
+        )
+        bars = self.client.get_stock_bars(request_params).data[symbol]
+        return bars[0].timestamp
+
     def _bars(self,
              symbol_or_symbols: str | list[str],
              start: datetime=datetime(2025, 5, 1),
@@ -143,11 +154,14 @@ class AlpacaMarketsRetriever:
         avg_spread = np.mean([(quote.ask_price - quote.bid_price) for quote in quotes])
         ask_price = np.mean([quote.ask_price for quote in quotes])
 
+        mean_ask_size = np.mean([quote.ask_size for quote in quotes])
+        mean_bid_size = np.mean([quote.bid_size for quote in quotes])
+
         return {
             'ask_price': ask_price,
-            'ask_size': int(np.mean([quote.ask_size for quote in quotes])),
+            'ask_size': int(mean_ask_size if np.isfinite(mean_ask_size) else 0),
             'bid_price': ask_price - avg_spread,
-            'bid_size': int(np.mean([quote.bid_size for quote in quotes])),
+            'bid_size': int(mean_bid_size if np.isfinite(mean_ask_size) else 0),
         }
 
     def _bars_with_quotes(self,

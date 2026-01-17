@@ -28,8 +28,13 @@ def _download_from_gdrive():
     #     output_dir='../modeling/checkpoints',
     #     file_name="best_model.pth"
     # )
+    # _download_file_from_gdrive(
+    #     file_id= "1uPa6Szzs9sN3e3PTvPaOeiSCbtfbQ36q",
+    #     output_dir='../data/raw/alpaca/bars_with_quotes',
+    #     file_name="1Min_2024-09-01-2025-10-01_AAPL+AMD+BABA+BITU+C+CSCO+DAL+DIA+GLD+GOOG+IJR+MARA+MRVL+MU+NEE+NKE+NVDA+ON+PLTR+PYPL+QLD+QQQ+QQQM+R.pkl"
+    # )
     _download_file_from_gdrive(
-        file_id= "1uPa6Szzs9sN3e3PTvPaOeiSCbtfbQ36q",
+        file_id= "1-lBUC933Kotv-_wUWlAH9EXILxL3AjT1",
         output_dir='../data/raw/alpaca/bars_with_quotes',
-        file_name="1Min_2024-09-01-2025-10-01_AAPL+AMD+BABA+BITU+C+CSCO+DAL+DIA+GLD+GOOG+IJR+MARA+MRVL+MU+NEE+NKE+NVDA+ON+PLTR+PYPL+QLD+QQQ+QQQM+R.pkl"
+        file_name="1Min_2024-11-01-2026-01-01_AAPL+ACWI+AMD+AMZN+APLD+AVGO+BAC+BITB+BITU+BMY+BOIL+C+CIFR+CLSK+CSCO+DIA+DKNG+ETHA+EWY+FBTC+GBTC+GDX.pkl"
     )

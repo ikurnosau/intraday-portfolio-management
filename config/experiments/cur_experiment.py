@@ -39,7 +39,7 @@ target = TripleClassification(horizon=horizon, base_feature='close')
 
 data_config = DataConfig(
     retriever=AlpacaMarketsRetriever(download_from_gdrive=False, timeframe=frequency),
-    symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_SPREAD_MAY_JUNE,
+    symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_COST_100_DEC_2025,
     frequency=frequency,
 
     # start=datetime(2024, 6, 1, tzinfo=timezone.utc),
