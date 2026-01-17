@@ -47,8 +47,8 @@ data_config = DataConfig(
     # train_set_last_date=datetime(2025, 4, 1, tzinfo=timezone.utc),
     # val_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
 
-    start=datetime(2024, 9, 1, tzinfo=Constants.Data.EASTERN_TZ),
-    end=datetime(2025, 10, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    start=datetime(2024, 11, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    end=datetime(2026, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
     train_set_last_date=datetime(2025, 7, 1, tzinfo=Constants.Data.EASTERN_TZ), 
     val_set_last_date=datetime(2025, 8, 1, tzinfo=Constants.Data.EASTERN_TZ),
 
