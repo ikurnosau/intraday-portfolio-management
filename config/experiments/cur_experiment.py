@@ -164,9 +164,8 @@ train_config = TrainConfig(
 rl_config = RLConfig(
     trajectory_length=12,
     fee=0.0,
-    spread_multiplier=1.,
+    spread_multiplier=1.5,
     trade_asset_count=1,
-    choose_from_n_best=95,
 )
 
 observability_config = ObservabilityConfig(
