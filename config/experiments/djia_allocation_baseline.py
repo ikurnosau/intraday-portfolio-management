@@ -133,7 +133,7 @@ cur_optimizer = torch.optim.AdamW(
 )
 
 train_config = TrainConfig(
-    loss_fn=RiskAdjustedPositionReturnLoss(fee=0.001, risk_lambda=1.5),
+    loss_fn=RiskAdjustedPositionReturnLoss(fee=0.001, risk_lambda=0.1),
     optimizer=cur_optimizer,
     scheduler={
         "type": "OneCycleLR",

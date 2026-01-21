@@ -54,10 +54,12 @@ def plot_cumulative_wealth(
                 returns_dict[baseline_name] = pd.Series(baseline_wealth).pct_change().dropna().to_list()
 
     # Formatting
-    plt.xlabel("Date")
-    plt.ylabel("Accumulated Wealth")
-    plt.title("Strategy Performance Over Time")
-    plt.legend()
+    plt.xlabel("Date", fontsize=16)
+    plt.ylabel("Accumulated Wealth", fontsize=16)
+    plt.title("Strategy Performance Over Time", fontsize=18)
+    plt.legend(fontsize=14)
+    plt.xticks(fontsize=14)
+    plt.yticks(fontsize=14)
     plt.grid(True)
     plt.tight_layout()
     plt.show()

@@ -75,13 +75,15 @@ def plot_position_heatmap(
     plt.figure(figsize=(12, max(4, n_timestamps * 0.3)))
     im = plt.imshow(positions, aspect="auto", cmap="bwr", vmin=-1, vmax=1)
 
-    plt.colorbar(im, label="Position (-1 = short, +1 = long)")
+    cbar = plt.colorbar(im)
+    cbar.set_label("Position (-1 = short, +1 = long)", fontsize=16)
+    cbar.ax.tick_params(labelsize=14)
 
-    plt.xticks(range(n_assets), asset_names, rotation=90)
-    plt.yticks(range(n_timestamps), timestamp_labels)
+    plt.xticks(range(n_assets), asset_names, rotation=90, fontsize=16)
+    plt.yticks(range(n_timestamps), timestamp_labels, fontsize=16)
 
-    plt.xlabel("Assets")
-    plt.ylabel("Time")
-    plt.title(title)
+    plt.xlabel("Assets", fontsize=16)
+    plt.ylabel("Time", fontsize=16)
+    plt.title(title, fontsize=20)
     plt.tight_layout()
     plt.show()
