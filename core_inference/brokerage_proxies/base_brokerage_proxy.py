@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from core_inference.models.position import Position
+from core_inference.models.brokerage_state import BrokerageState
 
 
 class BaseBrokerageProxy(ABC):
@@ -18,4 +18,8 @@ class BaseBrokerageProxy(ABC):
 
     @abstractmethod
     def get_all_positions(self) -> dict[str: int]:
+        raise NotImplementedError("Subclasses must implement this method")
+
+    @abstractmethod
+    def get_named_brokerage_state(self) -> dict[str: BrokerageState]:
         raise NotImplementedError("Subclasses must implement this method")

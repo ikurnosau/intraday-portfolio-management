@@ -146,7 +146,8 @@ class DataPreparer:
                                       data: dict[str, pd.DataFrame],
                                       n_timestamps: int,
                                       features: dict[str, Callable],
-                                      include_target_and_statistics: bool=False,
+                                      include_target: bool=False,
+                                      include_statistics: bool=False,
                                       statistics: dict[str, Callable] | None = None,
                                       per_asset_target: dict[str, Callable] | None = None,
                                       ) -> np.ndarray | tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]:
@@ -170,26 +171,32 @@ class DataPreparer:
         if self.validator is not None:
             self.validator.validate_x(X, n_assets=len(data), seq_len=self.in_seq_len)
 
-        if not include_target_and_statistics:
-            return X
-        else:
+        output = [X]
+
+        if include_target:
             target_feature = {asset_name: per_asset_target[asset_name](asset_df_filled) \
                 for asset_name, asset_df_filled in data_filled.items()}
             y = self._features_to_model_input(target_feature)[-n_timestamps:]
-            if self.validator is not None:
-             self.validator.validate_target(y)
 
+            if self.validator is not None:
+                self.validator.validate_target(y)
+
+            output.append(y)
+
+        if include_statistics:
             calculated_statistics: dict[str, np.ndarray] = {}
             for statistics_name, statistics_func in statistics.items():
                 statistics_features = self._generate_raw_features(data_filled, features={statistics_name: statistics_func})
                 calculated_statistics[statistics_name] = self._features_to_model_input(statistics_features)[-n_timestamps:]
                 if self.validator is not None:
                     self.validator.validate_statistics(statistics_name, calculated_statistics[statistics_name])
-            
+
             if self.validator is not None:
                 self.validator.validate_x_target_statistics(X, y, calculated_statistics)
+            
+            output.append(calculated_statistics)
 
-            return X, y, calculated_statistics
+        return tuple(output) if len(output) > 1 else output[0]
 
     def get_experiment_data(self, 
                             data: dict[str, pd.DataFrame],
@@ -241,7 +248,8 @@ class DataPreparer:
                     cur_slice,
                     n_timestamps=n_timestamps,
                     features=features,
-                    include_target_and_statistics=True,
+                    include_target=True,
+                    include_statistics=True,
                     per_asset_target=per_asset_target,
                     statistics=statistics,
                 )

@@ -1,12 +1,12 @@
 import pandas as pd
 import threading
-
 from core_inference.brokerage_proxies.base_brokerage_proxy import BaseBrokerageProxy
 from core_inference.repository import Repository
+from core_inference.models.brokerage_state import BrokerageState
 
 
 class BacktestBrokerageProxy(BaseBrokerageProxy):
-    def __init__(self, repository: Repository, spread_multiplier: float = 1.0, cash_balance: float = 100000): 
+    def __init__(self, repository: Repository, spread_multiplier: float, cash_balance: float = 100000): 
         self.repository = repository
         self.spread_multiplier = spread_multiplier
         self.cash_balance = cash_balance
@@ -42,3 +42,15 @@ class BacktestBrokerageProxy(BaseBrokerageProxy):
 
     def _transaction_cost(self, shares: int, asset_data: pd.Series) -> float:
         return self.spread_multiplier * (asset_data['ask_price'] - asset_data['bid_price']) * abs(shares) / 2
+
+    def get_named_brokerage_state(self) -> dict[str: BrokerageState]:
+        with self._lock:
+            cash = self.cash_balance
+            shares_hold = dict(self.shares_hold)
+        return {
+            "backtest": BrokerageState(
+                equity=self.get_equity(),
+                cash_balance=cash,
+                shares_hold=shares_hold,
+            )
+        }
