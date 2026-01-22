@@ -15,9 +15,12 @@ from core_inference.brokerage_proxies.alpaca_brokerage_proxy import AlpacaBroker
 from core_inference.brokerage_proxies.backtest_brokerage_proxy import BacktestBrokerageProxy
 from core_inference.brokerage_proxies.aggregated_brokerage_proxy import AggregatedBrokerageProxy
 from core_inference.repository import Repository
+from data.raw.retrievers.alpaca_markets_retriever import AlpacaMarketsRetriever
 from modeling.modeling_utils import load_model_and_allocator_params
 from core_inference.allocators.signal_predictor_allocator import SignalPredictorAllocator
 
+
+load_dotenv()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -40,6 +43,7 @@ data_preparer = DataPreparer(
 repository = Repository(
     trading_symbols=config.data_config.symbol_or_symbols,
     required_history_depth=config.data_config.in_seq_len + config.data_config.normalizer.get_window() + 30,
+    retriever=config.data_config.retriever,
 )
 
 alpaca_proxy = AlpacaBrokerageProxy(paper=True)

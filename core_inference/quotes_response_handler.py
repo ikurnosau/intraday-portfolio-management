@@ -6,6 +6,6 @@ class QuotesResponseHandler:
         self.repository = repository
 
     async def handle(self, data):
-        self.repository.add_quote(data)
+        self.repository.update_quote(data)
 
         
