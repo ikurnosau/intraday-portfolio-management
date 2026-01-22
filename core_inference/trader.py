@@ -113,8 +113,11 @@ class Trader:
 
         logging.info("Order execution completed!")
 
+        brokerage_states = self.brokerage_proxy.get_named_brokerage_state()
+        logging.info(f"Brokerage states: {brokerage_states}")
+
         self.states_history.append(TraderState(
             allocation=new_allocation,
             shares_hold=self.brokerage_proxy.get_all_positions(),
-            brokerage_states=self.brokerage_proxy.get_named_brokerage_state(),
+            brokerage_states=brokerage_states,
         ))

@@ -7,7 +7,6 @@ from torch.optim.lr_scheduler import LRScheduler
 from alpaca.data.timeframe import TimeFrame
 from typing import Any
 from core_data_prep.validations import Validator
-from modeling.rl.actors.base_actor import BaseActor
 from data.processed.normalization import BaseNormalizer
 
 

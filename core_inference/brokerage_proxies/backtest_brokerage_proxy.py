@@ -46,7 +46,7 @@ class BacktestBrokerageProxy(BaseBrokerageProxy):
     def get_named_brokerage_state(self) -> dict[str: BrokerageState]:
         with self._lock:
             cash = self.cash_balance
-            shares_hold = dict(self.shares_hold)
+            shares_hold = self.get_all_positions()
         return {
             "backtest": BrokerageState(
                 equity=self.get_equity(),

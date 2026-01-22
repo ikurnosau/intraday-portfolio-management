@@ -1,4 +1,7 @@
+import sys
 import os
+sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
+
 import logging
 from dotenv import load_dotenv
 import torch
@@ -51,7 +54,7 @@ backtest_proxy = BacktestBrokerageProxy(repository, config.rl_config.spread_mult
 aggregated_proxy = AggregatedBrokerageProxy([alpaca_proxy, backtest_proxy])
 
 model, allocator_params = load_model_and_allocator_params(
-    model_path="signal_predictor_with_allocator_params.pth",
+    model_path="../modeling/checkpoints/signal_predictor_with_allocator_params.pth",
     device=device,
     config=config
 )

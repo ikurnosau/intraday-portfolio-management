@@ -58,10 +58,7 @@ class AlpacaBrokerageProxy(BaseBrokerageProxy):
         open_positions = self.trading_client.get_all_positions()
         positions = {}
         for position in open_positions:
-            qty = float(position.qty)
-            if position.side.lower() == "short":
-                qty = -qty
-            positions[position.symbol] = qty
+            positions[position.symbol] = float(position.qty)
         return positions
 
     def get_named_brokerage_state(self) -> dict[str: BrokerageState]:
