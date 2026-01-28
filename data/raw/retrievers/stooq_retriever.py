@@ -26,19 +26,31 @@ def _download_folder_from_gdrive(folder_id: str, output_dir: str, folder_name: s
     gdown.download_folder(url=url, output=output_path, quiet=False)
 
 
-def _download_from_gdrive():
-    _download_folder_from_gdrive(
-        folder_id= "1wUeVf7rCWwqjSrv6mC03XreupUnvv3sC",
-        output_dir='../data/raw/stooq/bars',
-        folder_name="djia_all"
-    )
+def _download_from_gdrive(folder_name: str):
+    if folder_name == 'djia_all':
+        _download_folder_from_gdrive(
+            folder_id= "1wUeVf7rCWwqjSrv6mC03XreupUnvv3sC",
+            output_dir='../data/raw/stooq/bars',
+            folder_name=folder_name
+        )
+    elif folder_name == 'nasdaq_100':
+        _download_folder_from_gdrive(
+            folder_id= "1kSq0x5WhkLm3T5h6uAKYB0bAizA1Mdyp",
+            output_dir='../data/raw/stooq/bars',
+            folder_name=folder_name
+        )
+    else:
+        raise ValueError(f"Invalid folder name: {folder_name}")
+
     
 class StooqRetriever:
-    ROOT_DIR = '../data/raw/stooq/bars/djia_all'
+    ROOT_DIR = '../data/raw/stooq/bars/'
 
-    def __init__(self, download_from_gdrive: bool=False):
+    def __init__(self, download_from_gdrive: bool=False, folder_name: str='djia_all'):
+        self.folder_name = folder_name
+        
         if download_from_gdrive:
-            _download_from_gdrive()
+            _download_from_gdrive(folder_name)
     
     def bars(self,
              symbol_or_symbols: str | list[str],
@@ -48,10 +60,11 @@ class StooqRetriever:
         end = pd.to_datetime(end)
 
         asset_dfs = {}
+        bars_dir = os.path.join(self.ROOT_DIR, self.folder_name)
         for stock_name in symbol_or_symbols:
             name = f'{stock_name.lower()}_us_d.csv'
-            if name in os.listdir(self.ROOT_DIR):
-                df = pd.read_csv(os.path.join(self.ROOT_DIR, name))
+            if name in os.listdir(bars_dir):
+                df = pd.read_csv(os.path.join(bars_dir, name))
                 df.columns = df.columns.str.lower()
 
                 df['date'] = pd.to_datetime(df['date'])

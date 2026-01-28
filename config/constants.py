@@ -101,6 +101,54 @@ class Constants:
         DJIA_2017_2018 = sorted("MMM, AXP, XOM, GE, AAPL, BA, CAT, CVX, CSCO, KO, DIS, GS, HD, PFE, IBM, JNJ, JPM, MCD, MRK, MSFT, NKE, INTC, PG, UTX, DWDP, TRV, UNH, VZ, V, WMT".split(', '))
         DJIA_2018_2019 = sorted("MMM, AXP, XOM, WBA, AAPL, BA, CAT, CVX, CSCO, KO, DIS, GS, HD, PFE, IBM, JNJ, JPM, MCD, MRK, MSFT, NKE, INTC, PG, UTX, DWDP, TRV, UNH, VZ, V, WMT".split(', '))
 
+        NASDAQ_100 = sorted([
+            "ADBE", "AMD", "ABNB", "ALNY", "GOOGL", "GOOG", "AMZN", "AEP", "AMGN", "ADI",
+            "AAPL", "AMAT", "APP", "ARM", "ASML", "TEAM", "ADSK", "ADP", "AXON", "BKR",
+            "BKNG", "AVGO", "CDNS", "CHTR", "CTAS", "CSCO", "CCEP", "CTSH", "CMCSA", "CEG",
+            "CPRT", "CSGP", "COST", "CRWD", "CSX", "DDOG", "DXCM", "FANG", "DASH", "EA",
+            "EXC", "FAST", "FER", "FTNT", "GEHC", "GILD", "HON", "IDXX", "INSM", "INTC",
+            "INTU", "ISRG", "KDP", "KLAC", "KHC", "LRCX", "LIN", "MAR", "MRVL", "MELI",
+            "META", "MCHP", "MU", "MSFT", "MDLZ", "MPWR", "MNST", "NFLX", "NVDA", "NXPI",
+            "ORLY", "ODFL", "PCAR", "PLTR", "PANW", "PAYX", "PYPL", "PDD", "PEP", "QCOM",
+            "REGN", "ROP", "ROST", "STX", "SHOP", "SBUX", "MSTR", "SNPS", "TMUS", "TTWO",
+            "TSLA", "TXN", "TRI", "VRSK", "VRTX", "WMT", "WDC", "WDAY", "WBD", "XEL",
+            "ZS"
+        ])
+
+        NASDAQ_30 = sorted([
+            "NVDA",   # NVIDIA Corp
+            "AAPL",   # Apple Inc.
+            "MSFT",   # Microsoft Corp
+            "AMZN",   # Amazon.com Inc.
+            "GOOGL",  # Alphabet Inc. (Class A)
+            "GOOG",   # Alphabet Inc. (Class C)
+            "META",   # Meta Platforms, Inc.
+            "TSLA",   # Tesla, Inc.
+            "AVGO",   # Broadcom Inc.
+            "COST",   # Costco Wholesale Corp
+            "NFLX",   # Netflix, Inc.
+            "ASML",   # ASML Holding
+            "TMUS",   # T-Mobile US, Inc.
+            "AMD",    # Advanced Micro Devices, Inc.
+            "AZN",    # AstraZeneca PLC
+            "LIN",    # Linde plc
+            "ISRG",   # Intuitive Surgical, Inc.
+            "QCOM",   # Qualcomm Inc.
+            "INTU",   # Intuit Inc.
+            "TXN",    # Texas Instruments Inc.
+            "AMGN",   # Amgen Inc.
+            "AMAT",   # Applied Materials, Inc.
+            "BKNG",   # Booking Holdings Inc.
+            "VRTX",   # Vertex Pharmaceuticals Inc.
+            "ADP",    # Automatic Data Processing, Inc.
+            "PANW",   # Palo Alto Networks, Inc.
+            "SBUX",   # Starbucks Corp
+            "REGN",   # Regeneron Pharmaceuticals, Inc.
+            "MDLZ",   # Mondelez International, Inc.
+            "MU",     # Micron Technology, Inc.
+            "PLTR"    # Palantir Technologies Inc.
+        ])
+        
         EASTERN_TZ = ZoneInfo("America/New_York")
 
         REGULAR_TRADING_HOURS_START = pd.to_datetime("9:30:00" ).time()
