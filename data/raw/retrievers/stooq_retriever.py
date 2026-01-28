@@ -35,7 +35,17 @@ def _download_from_gdrive(folder_name: str):
         )
     elif folder_name == 'nasdaq_100':
         _download_folder_from_gdrive(
-            folder_id= "1kSq0x5WhkLm3T5h6uAKYB0bAizA1Mdyp",
+            folder_id= "1qpaZ5njWsCflLcepBxTfl74T5dd4H32z",
+            output_dir='../data/raw/stooq/bars',
+            folder_name=folder_name
+        )
+        _download_folder_from_gdrive(
+            folder_id= "1d1BWSTC5B9RbVWhLQRWG22GVRrZ9FtZh",
+            output_dir='../data/raw/stooq/bars',
+            folder_name=folder_name
+        )
+        _download_folder_from_gdrive(
+            folder_id= "1csGh0IMyfAynzJyiKVwcek7vtmRIxhFn",
             output_dir='../data/raw/stooq/bars',
             folder_name=folder_name
         )
