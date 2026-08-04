@@ -38,7 +38,7 @@ horizon = 1
 target = TripleClassification(horizon=horizon, base_feature='close')
 
 data_config = DataConfig(
-    retriever=AlpacaMarketsRetriever(download_from_gdrive=True, timeframe=frequency),
+    retriever=AlpacaMarketsRetriever(download_from_gdrive=False, timeframe=frequency),
     symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_COST_100_DEC_2025,
     frequency=frequency,
 
@@ -93,7 +93,7 @@ data_config = DataConfig(
         "next_return": lambda df: (df['close'].shift(-horizon) / df['close'] - 1.0).fillna(0.0).astype(np.float32),
         "volatility": lambda df: df[getattr(target, 'base_feature', 'close')].pct_change().astype(np.float32)\
             .rolling(window=10).std().fillna(0.0).astype(np.float32),
-        "spread": lambda df: (df['ask_price'] - df['bid_price']) / (df['ask_price'] + 1e-8),
+        "spread": lambda df: (df['ask_price'] - df['bid_price']) / (df['close'] + 1e-8),
     },
     
     target=target,

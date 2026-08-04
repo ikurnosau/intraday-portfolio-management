@@ -1,5 +1,8 @@
 import pandas as pd
+from pathlib import Path
 from zoneinfo import ZoneInfo
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 class Constants:
     class Configuration: 
@@ -159,8 +162,10 @@ class Constants:
         
         class Retrieving: 
             class Alpaca:
-                BARS_SAVE_DIR = '../data/raw/alpaca/bars'
-                BARS_WITH_QUOTES_SAVE_DIR = '../data/raw/alpaca/bars_with_quotes'
+                BARS_SAVE_DIR = str(_REPO_ROOT / 'data' / 'raw' / 'alpaca' / 'bars')
+                BARS_WITH_QUOTES_SAVE_DIR = str(
+                    _REPO_ROOT / 'data' / 'raw' / 'alpaca' / 'bars_with_quotes'
+                )
 
     class MLFlow: 
         TRACKING_URI = "http://127.0.0.1:8080"

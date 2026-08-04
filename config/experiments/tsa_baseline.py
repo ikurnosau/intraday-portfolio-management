@@ -10,7 +10,7 @@ import torch
 import numpy as np
 import polars as pl
 import math
-from data.processed.indicators_polars import EMA as EMA_pl, RSI as RSI_pl, VWAP as VWAP_pl
+from data.processed.indicators_polars import RollingVWAP as RollingVWAP_pl, RSI as RSI_pl, SMA as SMA_pl
 
 from config.experiment_config import ExperimentConfig, DataConfig, ModelConfig, TrainConfig, ObservabilityConfig, RLConfig
 from config.constants import Constants
@@ -60,8 +60,8 @@ data_config = DataConfig(
         "vol_delta": lambda lf: (((pl.col("volume") + 1e-8) / (pl.col("volume").shift(1) + 1e-8)).log()).fill_null(0.0),
 
         # --- Momentum & trend -----------------------------------------------------------------------
-        "EMA_fast": EMA_pl(3),              # fast EMA (≈ 3-min)
-        "EMA_slow": EMA_pl(30),            # slow EMA adjusted for 60-bar window
+        "SMA_fast": SMA_pl(3),
+        "SMA_slow": SMA_pl(30),
         "RSI2": RSI_pl(2),
         "RSI6": RSI_pl(6),
         # Optionally uncomment to add a slow oscillator now that the window is 60
@@ -71,7 +71,7 @@ data_config = DataConfig(
         "realvol20": lambda lf: (pl.col("close") + 1e-8).pct_change().rolling_std(window_size=20).fill_null(0.0),
 
         # --- Microstructure & order-flow -----------------------------------------------------------
-        "VWAP_dist": lambda lf: (pl.col("close") - VWAP_pl()(lf)) / (pl.col("close") + 1e-8),
+        "VWAP_dist": lambda lf: (pl.col("close") - RollingVWAP_pl(30)(lf)) / (pl.col("close") + 1e-8),
         "loc_in_range": lambda lf: (pl.col("close") - pl.col("low")) / (pl.col("high") - pl.col("low") + 1e-8),
 
         # --- Time-of-day cyclic encodings -----------------------------------------------------------
@@ -79,7 +79,7 @@ data_config = DataConfig(
         "tod_cos": lambda lf: (((pl.col("date").dt.hour() * 60 + pl.col("date").dt.minute()).cast(pl.Float32) * (2 * math.pi) / (6.5 * 60)).cos()) + 0.018629849,
 
         # --- Derived features ----------------------------------------------------------------------
-        "ema_slope": lambda lf: EMA_pl(3)(lf) - EMA_pl(15)(lf),     # or ratio
+        "sma_slope": lambda lf: SMA_pl(3)(lf) - SMA_pl(15)(lf),
         "vol_slope": lambda lf: (
             (pl.col("close") + 1e-8).pct_change().rolling_std(window_size=10) / (
                 (pl.col("close") + 1e-8).pct_change().rolling_std(window_size=20) + 1e-8
@@ -93,7 +93,7 @@ data_config = DataConfig(
         "next_return": lambda df: (df['close'].shift(-horizon) / df['close'] - 1.0).fillna(0.0).astype(np.float32),
         "volatility": lambda df: df[getattr(target, 'base_feature', 'close')].pct_change().astype(np.float32)\
             .rolling(window=10).std().fillna(0.0).astype(np.float32),
-        "spread": lambda df: (df['ask_price'] - df['bid_price']) / (df['ask_price'] + 1e-8),
+        "spread": lambda df: (df['ask_price'] - df['bid_price']) / (df['close'] + 1e-8),
     },
     
     target=target,

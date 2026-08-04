@@ -33,16 +33,33 @@ class AlpacaMarketsRetriever:
     FEED = 'sip'
 
     def __init__(self, timeframe: TimeFrame=TimeFrame.Minute, download_from_gdrive: bool=False):
+        # Repo-root .env first so credentials resolve regardless of process cwd.
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__))
+        )))
+        load_dotenv(os.path.join(repo_root, ".env"))
         load_dotenv()
         self.api_key = os.getenv('API_KEY')
         self.api_secret = os.getenv('API_SECRET')
 
         self.timeframe = timeframe
+        self._client: StockHistoricalDataClient | None = None
 
-        if not download_from_gdrive:
-            self.client = StockHistoricalDataClient(self.api_key, self.api_secret)
-        else:
+        if download_from_gdrive:
             _download_from_gdrive()
+
+    @property
+    def client(self) -> StockHistoricalDataClient:
+        """Lazy client: local cache loads do not require Alpaca credentials."""
+        if self._client is None:
+            if not self.api_key or not self.api_secret:
+                raise ValueError(
+                    "Alpaca API credentials are required for live data requests. "
+                    "Set API_KEY and API_SECRET in the environment or a repo-root "
+                    ".env file. Local pickle cache loads do not need credentials."
+                )
+            self._client = StockHistoricalDataClient(self.api_key, self.api_secret)
+        return self._client
 
     def build_file_name(self,
                         symbol_or_symbols: str | list[str],
