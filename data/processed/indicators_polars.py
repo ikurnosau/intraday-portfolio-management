@@ -37,6 +37,24 @@ class EMA:
         )
 
 
+class SMA:
+    """Simple Moving Average over the current and preceding period - 1 rows."""
+
+    def __init__(self, period: int, base_feature: str = "close") -> None:
+        if period < 1:
+            raise ValueError("period must be at least 1")
+        self.period = period
+        self.base_feature = base_feature
+
+    def __call__(self, lf: pl.LazyFrame) -> pl.Expr:
+        _ = lf
+        return (
+            pl.col(self.base_feature)
+            .rolling_mean(window_size=self.period, min_samples=1)
+            .fill_null(0.0)
+        )
+
+
 class RSI:
     """Relative Strength Index (RSI) implemented in Polars.
 
@@ -98,3 +116,41 @@ class VWAP:
         cumulative_tpv = (tp * pl.col(self.volume_feature)).cum_sum()
         cumulative_vol = pl.col(self.volume_feature).cum_sum()
         return cumulative_tpv / (cumulative_vol + 1e-8)
+
+
+class RollingVWAP:
+    """Volume Weighted Average Price over a finite trailing window."""
+
+    def __init__(
+        self,
+        period: int,
+        high_feature: str = "high",
+        low_feature: str = "low",
+        close_feature: str = "close",
+        volume_feature: str = "volume",
+    ) -> None:
+        if period < 1:
+            raise ValueError("period must be at least 1")
+        self.period = period
+        self.high_feature = high_feature
+        self.low_feature = low_feature
+        self.close_feature = close_feature
+        self.volume_feature = volume_feature
+
+    def __call__(self, lf: pl.LazyFrame) -> pl.Expr:
+        _ = lf
+        typical_price = (
+            pl.col(self.high_feature)
+            + pl.col(self.low_feature)
+            + pl.col(self.close_feature)
+        ) / 3
+        volume = pl.col(self.volume_feature)
+        rolling_tpv = (typical_price * volume).rolling_sum(
+            window_size=self.period,
+            min_samples=1,
+        )
+        rolling_volume = volume.rolling_sum(
+            window_size=self.period,
+            min_samples=1,
+        )
+        return (rolling_tpv / (rolling_volume + 1e-8)).fill_null(0.0)

@@ -11,3 +11,4 @@ data/raw/stooq/
 ReportRepo/
 data/experiments_results/
 modeling/checkpoints/
+.venv/

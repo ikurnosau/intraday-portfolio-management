@@ -173,3 +173,276 @@ class Validator:
     @staticmethod
     def _x_per_asset_timestamp(x: np.ndarray, asset_i: int, timestamp_i: int) -> np.ndarray:
         return x[:, asset_i, timestamp_i, :]
+
+
+def validate_streaming_vs_offline_x(
+    x_offline: np.ndarray,
+    x_streaming: np.ndarray,
+    *,
+    feature_names: list[str],
+    symbols: list[str],
+    day_i: int,
+    timestamp,
+    timestamp_i: int,
+    rtol: float = 1e-5,
+    atol: float = 1e-6,
+    raise_on_mismatch: bool = False,
+) -> dict:
+    """Compare one offline tensor with its streaming counterpart.
+
+    Expected shape for each input: (assets, seq_len, features).
+    On mismatch, logs per-sequence and per-feature breakdowns plus the
+    worst cell, then optionally raises.
+    """
+    assert x_offline.shape == x_streaming.shape, (
+        f"Shape mismatch: offline {x_offline.shape} vs streaming {x_streaming.shape}"
+    )
+    assert x_offline.ndim == 3, (
+        f"Expected (assets, seq_len, features), got ndim={x_offline.ndim}"
+    )
+    n_assets, seq_len, n_features = x_offline.shape
+    assert n_assets == len(symbols), (
+        f"Expected {len(symbols)} symbols, got {n_assets} assets in X"
+    )
+    assert n_features == len(feature_names), (
+        f"Expected {len(feature_names)} features, got {n_features} in X"
+    )
+
+    matches = np.allclose(
+        x_offline,
+        x_streaming,
+        rtol=rtol,
+        atol=atol,
+        equal_nan=True,
+    )
+    abs_difference = np.abs(x_offline - x_streaming)
+    summary = {
+        "matches": matches,
+        "day_i": day_i,
+        "timestamp": timestamp,
+        "timestamp_i": timestamp_i,
+        "max_abs_diff": float(np.nanmax(abs_difference)),
+        "median_abs_diff": float(np.nanmedian(abs_difference)),
+        "mean_abs_diff": float(np.nanmean(abs_difference)),
+    }
+    if matches:
+        return summary
+
+    logging.warning(
+        "Input mismatch on day %s at %s: max_abs_diff=%s, "
+        "median_abs_diff=%s, mean_abs_diff=%s",
+        day_i,
+        timestamp,
+        summary["max_abs_diff"],
+        summary["median_abs_diff"],
+        summary["mean_abs_diff"],
+    )
+
+    per_seq = []
+    for seq_i in range(seq_len):
+        seq_diff = abs_difference[:, seq_i, :]
+        per_seq.append({
+            "seq_i": seq_i,
+            "allclose": bool(np.allclose(
+                x_offline[:, seq_i, :],
+                x_streaming[:, seq_i, :],
+                rtol=rtol,
+                atol=atol,
+                equal_nan=True,
+            )),
+            "max_abs_diff": float(np.nanmax(seq_diff)),
+            "median_abs_diff": float(np.nanmedian(seq_diff)),
+            "mean_abs_diff": float(np.nanmean(seq_diff)),
+        })
+    mismatch_seq = [row for row in per_seq if not row["allclose"]]
+    summary["mismatch_seq"] = mismatch_seq
+    logging.warning(
+        "seq positions mismatched: %s/%s\n%s",
+        len(mismatch_seq),
+        seq_len,
+        pd.DataFrame(mismatch_seq if mismatch_seq else per_seq),
+    )
+
+    per_feature = []
+    for feat_i, feat_name in enumerate(feature_names):
+        feat_diff = abs_difference[:, :, feat_i]
+        per_feature.append({
+            "feature": feat_name,
+            "allclose": bool(np.allclose(
+                x_offline[:, :, feat_i],
+                x_streaming[:, :, feat_i],
+                rtol=rtol,
+                atol=atol,
+                equal_nan=True,
+            )),
+            "max_abs_diff": float(np.nanmax(feat_diff)),
+            "median_abs_diff": float(np.nanmedian(feat_diff)),
+            "mean_abs_diff": float(np.nanmean(feat_diff)),
+            "n_mismatch_cells": int(np.sum(
+                ~np.isclose(
+                    x_offline[:, :, feat_i],
+                    x_streaming[:, :, feat_i],
+                    rtol=rtol,
+                    atol=atol,
+                    equal_nan=True,
+                )
+            )),
+        })
+    mismatch_features = [row for row in per_feature if not row["allclose"]]
+    summary["mismatch_features"] = mismatch_features
+    logging.warning(
+        "features mismatched: %s/%s\n%s",
+        len(mismatch_features),
+        n_features,
+        pd.DataFrame(mismatch_features if mismatch_features else per_feature),
+    )
+
+    flat_idx = int(np.nanargmax(abs_difference))
+    asset_i, seq_i, feat_i = np.unravel_index(flat_idx, abs_difference.shape)
+    worst = {
+        "symbol": symbols[asset_i],
+        "seq_i": int(seq_i),
+        "feature": feature_names[feat_i],
+        "diff": float(abs_difference[asset_i, seq_i, feat_i]),
+        "offline": float(x_offline[asset_i, seq_i, feat_i]),
+        "streaming": float(x_streaming[asset_i, seq_i, feat_i]),
+    }
+    summary["worst_cell"] = worst
+    logging.warning(
+        "worst cell: symbol=%s, seq_i=%s, feature=%s, diff=%s, "
+        "offline=%s, streaming=%s",
+        worst["symbol"],
+        worst["seq_i"],
+        worst["feature"],
+        worst["diff"],
+        worst["offline"],
+        worst["streaming"],
+    )
+
+    if raise_on_mismatch:
+        raise AssertionError(
+            f"Streaming/offline input mismatch on day {day_i} at {timestamp}: "
+            f"max_abs_diff={summary['max_abs_diff']}, "
+            f"worst={worst}"
+        )
+    return summary
+
+
+def validate_streaming_vs_offline_returns(
+    *,
+    streaming_allocation: np.ndarray,
+    offline_allocation: np.ndarray,
+    day_i: int,
+    timestamp,
+    timestamp_i: int,
+    symbols: list[str],
+    streaming_step_return: float | None = None,
+    offline_realized_return: float | None = None,
+    rtol: float = 1e-5,
+    atol: float = 1e-4,
+    return_rtol: float = 0.2,
+    return_atol: float = 1e-4,
+    raise_on_mismatch: bool = True,
+) -> dict:
+    """Compare streaming trader allocation / step return to offline backtest.
+
+    Offline ``realized_returns[t]`` is
+    ``sum(allocation[t] * next_return[t]) - cost(allocation[t-1] -> allocation[t])``.
+
+    Streaming should pass the same quantity as ``streaming_step_return`` once the
+    previous bar's mark-to-market and the trade cost at ``t`` are available
+    (typically checked on the following timestamp, before the next trade).
+
+    Allocations use tight ``rtol``/``atol``. Step returns use looser
+    ``return_rtol``/``return_atol`` because streaming trades whole shares, so
+    effective notional (and thus step return) can differ slightly from the
+    continuous offline portfolio return. ``np.isclose`` is preferred over a raw
+    ratio check: near-zero bars would otherwise divide by ~0.
+    """
+    streaming_allocation = np.asarray(streaming_allocation, dtype=np.float64)
+    offline_allocation = np.asarray(offline_allocation, dtype=np.float64)
+    assert streaming_allocation.shape == offline_allocation.shape, (
+        f"Allocation shape mismatch: streaming {streaming_allocation.shape} "
+        f"vs offline {offline_allocation.shape}"
+    )
+    assert streaming_allocation.shape == (len(symbols),), (
+        f"Expected allocation length {len(symbols)}, got {streaming_allocation.shape}"
+    )
+
+    alloc_matches = np.allclose(
+        streaming_allocation,
+        offline_allocation,
+        rtol=rtol,
+        atol=atol,
+        equal_nan=True,
+    )
+    alloc_abs_diff = np.abs(streaming_allocation - offline_allocation)
+    summary = {
+        "allocation_matches": alloc_matches,
+        "day_i": day_i,
+        "timestamp": timestamp,
+        "timestamp_i": timestamp_i,
+        "allocation_max_abs_diff": float(np.nanmax(alloc_abs_diff)),
+        "allocation_mean_abs_diff": float(np.nanmean(alloc_abs_diff)),
+    }
+    if not alloc_matches:
+        worst_i = int(np.nanargmax(alloc_abs_diff))
+        summary["allocation_worst"] = {
+            "symbol": symbols[worst_i],
+            "streaming": float(streaming_allocation[worst_i]),
+            "offline": float(offline_allocation[worst_i]),
+            "diff": float(alloc_abs_diff[worst_i]),
+        }
+        logging.warning(
+            "Allocation mismatch on day %s at %s (idx=%s): max_abs_diff=%s, worst=%s",
+            day_i,
+            timestamp,
+            timestamp_i,
+            summary["allocation_max_abs_diff"],
+            summary["allocation_worst"],
+        )
+
+    return_matches = True
+    if streaming_step_return is not None and offline_realized_return is not None:
+        return_matches = bool(np.isclose(
+            streaming_step_return,
+            offline_realized_return,
+            rtol=return_rtol,
+            atol=return_atol,
+            equal_nan=True,
+        ))
+        summary["return_matches"] = return_matches
+        summary["streaming_step_return"] = float(streaming_step_return)
+        summary["offline_realized_return"] = float(offline_realized_return)
+        summary["return_abs_diff"] = float(
+            abs(streaming_step_return - offline_realized_return)
+        )
+        if abs(offline_realized_return) > 0:
+            summary["return_ratio"] = float(
+                streaming_step_return / offline_realized_return
+            )
+        else:
+            summary["return_ratio"] = None
+        if not return_matches:
+            logging.warning(
+                "Return mismatch on day %s at %s (idx=%s): "
+                "streaming=%s, offline=%s, abs_diff=%s, ratio=%s "
+                "(return_rtol=%s, return_atol=%s)",
+                day_i,
+                timestamp,
+                timestamp_i,
+                summary["streaming_step_return"],
+                summary["offline_realized_return"],
+                summary["return_abs_diff"],
+                summary["return_ratio"],
+                return_rtol,
+                return_atol,
+            )
+
+    summary["matches"] = alloc_matches and return_matches
+    if raise_on_mismatch and not summary["matches"]:
+        raise AssertionError(
+            f"Streaming/offline returns mismatch on day {day_i} at {timestamp}: "
+            f"{summary}"
+        )
+    return summary
