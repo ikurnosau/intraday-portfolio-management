@@ -1,4 +1,3 @@
-import os
 import torch
 import torch.nn as nn
 import pandas as pd
@@ -7,6 +6,7 @@ import math
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
+from config.settings import Settings, get_settings
 from core_data_prep.core_data_prep import DataPreparer
 from core_inference.brokerage_proxies.base_brokerage_proxy import BaseBrokerageProxy
 from core_inference.repository import Repository
@@ -21,7 +21,9 @@ class Trader:
                  statistics: dict[str, Callable],
                  brokerage_proxy: BaseBrokerageProxy,
                  repository: Repository,
-                 portfolio_allocator: nn.Module):
+                 portfolio_allocator: nn.Module,
+                 settings: Settings | None = None):
+        settings = settings or get_settings()
         self.order_size_notional = order_size_notional
         self.data_preparer = data_preparer
         self.features = features
@@ -33,7 +35,10 @@ class Trader:
 
         self.portfolio_allocator = portfolio_allocator
         # torch.compile is optional; disable by default to avoid Triton dependency in inference
-        if torch.cuda.is_available() and bool(int(os.getenv("ENABLE_TORCH_COMPILE", "0"))):
+        if (
+            torch.cuda.is_available()
+            and settings.runtime.enable_torch_compile
+        ):
             try:
                 self.portfolio_allocator = torch.compile(self.portfolio_allocator, mode="reduce-overhead")
             except Exception as exc:  # pragma: no cover - defensive fallback

@@ -8,15 +8,15 @@ from alpaca.data.timeframe import TimeFrame
 
 from datetime import datetime, timedelta, timezone
 import pandas as pd
-from dotenv import load_dotenv
-import os
 import pickle 
 import numpy as np
 import logging
+import tempfile
 
 from config.constants import Constants
+from config.settings import Settings, get_settings
+from data.object_store import B2ObjectStore
 from data.processed.data_processing_utils import convert_to_eastern
-from data.raw.retrievers.alpaca_markets_utils import _download_from_gdrive
 
 
 class _NumpyCoreRedirectingUnpickler(pickle.Unpickler):
@@ -32,33 +32,39 @@ class _NumpyCoreRedirectingUnpickler(pickle.Unpickler):
 class AlpacaMarketsRetriever:
     FEED = 'sip'
 
-    def __init__(self, timeframe: TimeFrame=TimeFrame.Minute, download_from_gdrive: bool=False):
-        # Repo-root .env first so credentials resolve regardless of process cwd.
-        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(
-            os.path.dirname(os.path.abspath(__file__))
-        )))
-        load_dotenv(os.path.join(repo_root, ".env"))
-        load_dotenv()
-        self.api_key = os.getenv('API_KEY')
-        self.api_secret = os.getenv('API_SECRET')
-
+    def __init__(
+        self,
+        timeframe: TimeFrame = TimeFrame.Minute,
+        object_store: B2ObjectStore | None = None,
+        settings: Settings | None = None,
+    ):
         self.timeframe = timeframe
         self._client: StockHistoricalDataClient | None = None
+        self._object_store = object_store
+        self._settings = settings
 
-        if download_from_gdrive:
-            _download_from_gdrive()
+    @property
+    def settings(self) -> Settings:
+        if self._settings is None:
+            self._settings = get_settings()
+        return self._settings
+
+    @property
+    def object_store(self) -> B2ObjectStore:
+        """Lazily initialize B2 so non-cached live requests do not need B2 credentials."""
+        if self._object_store is None:
+            self._object_store = B2ObjectStore.from_settings(self.settings.b2)
+        return self._object_store
 
     @property
     def client(self) -> StockHistoricalDataClient:
-        """Lazy client: local cache loads do not require Alpaca credentials."""
+        """Lazy client: B2 cache loads do not require Alpaca credentials."""
         if self._client is None:
-            if not self.api_key or not self.api_secret:
-                raise ValueError(
-                    "Alpaca API credentials are required for live data requests. "
-                    "Set API_KEY and API_SECRET in the environment or a repo-root "
-                    ".env file. Local pickle cache loads do not need credentials."
-                )
-            self._client = StockHistoricalDataClient(self.api_key, self.api_secret)
+            alpaca_settings = self.settings.alpaca
+            self._client = StockHistoricalDataClient(
+                alpaca_settings.paper_api_key,
+                alpaca_settings.paper_api_secret,
+            )
         return self._client
 
     def build_file_name(self,
@@ -69,20 +75,40 @@ class AlpacaMarketsRetriever:
                 + f"{'+'.join(symbol_or_symbols if not isinstance(symbol_or_symbols, str) else [symbol_or_symbols])[:100]}.pkl"
     
     @staticmethod
-    def save_data(payload: object, save_dir: str, file_name: str): 
-        if not os.path.exists(save_dir): 
-            os.makedirs(save_dir)
-        
-        with open(os.path.join(save_dir, file_name), 'wb') as output_file: 
-            pickle.dump(payload, output_file)
+    def build_object_key(storage_prefix: str, file_name: str) -> str:
+        return f"{storage_prefix.strip('/')}/{file_name}"
 
-    @staticmethod
-    def load_data(save_dir: str, file_name: str) -> object: 
-        with open(os.path.join(save_dir, file_name), 'rb') as input_file:
+    def cache_exists(self, storage_prefix: str, file_name: str) -> bool:
+        return self.object_store.exists(
+            self.build_object_key(storage_prefix, file_name)
+        )
+
+    def save_data(self, payload: object, storage_prefix: str, file_name: str):
+        object_key = self.build_object_key(storage_prefix, file_name)
+        with tempfile.SpooledTemporaryFile(
+            max_size=64 * 1024 * 1024,
+            mode="w+b",
+        ) as output_file:
+            pickle.dump(payload, output_file, protocol=pickle.HIGHEST_PROTOCOL)
+            output_file.seek(0)
+            self.object_store.upload_fileobj(object_key, output_file)
+
+    def load_data(self, storage_prefix: str, file_name: str) -> object:
+        object_key = self.build_object_key(storage_prefix, file_name)
+        with tempfile.SpooledTemporaryFile(
+            max_size=64 * 1024 * 1024,
+            mode="w+b",
+        ) as input_file:
+            self.object_store.download_fileobj(object_key, input_file)
+            input_file.seek(0)
             return _NumpyCoreRedirectingUnpickler(input_file).load()
 
     def get_all_symbols(self) -> list[str]:
-        trading_client = TradingClient(self.api_key, self.api_secret)
+        alpaca_settings = self.settings.alpaca
+        trading_client = TradingClient(
+            alpaca_settings.paper_api_key,
+            alpaca_settings.paper_api_secret,
+        )
         search_params = GetAssetsRequest(asset_class=AssetClass.US_EQUITY)
 
         assets = trading_client.get_all_assets(search_params)
@@ -110,7 +136,12 @@ class AlpacaMarketsRetriever:
              symbol_or_symbols: str | list[str],
              start: datetime=datetime(2025, 5, 1),
              end: datetime=datetime(2025, 5, 2), 
-             save_dir: str=Constants.Data.Retrieving.Alpaca.BARS_SAVE_DIR) -> dict[str: pd.DataFrame]:
+             save_dir: str=Constants.Data.Retrieving.Alpaca.BARS_STORAGE_PREFIX) -> dict[str: pd.DataFrame]:
+        logging.info(
+            "Retrieving Alpaca bars from the Alpaca API for %s to %s.",
+            start,
+            end,
+        )
         request_params = StockBarsRequest(
             symbol_or_symbols=symbol_or_symbols,
             timeframe=self.timeframe,
@@ -137,13 +168,15 @@ class AlpacaMarketsRetriever:
              symbol_or_symbols: str | list[str],
              start: datetime=datetime(2025, 5, 1),
              end: datetime=datetime(2025, 5, 2), 
-             save_dir: str=Constants.Data.Retrieving.Alpaca.BARS_SAVE_DIR) -> dict[str: pd.DataFrame]:
+             save_dir: str=Constants.Data.Retrieving.Alpaca.BARS_STORAGE_PREFIX) -> dict[str: pd.DataFrame]:
         
         if save_dir:
             file_name = self.build_file_name(symbol_or_symbols, start, end)
-            potential_load_path = os.path.join(save_dir, file_name)
-
-            if os.path.exists(potential_load_path): 
+            if self.cache_exists(save_dir, file_name):
+                logging.info(
+                    "Downloading cached Alpaca bars from cloud storage: %s",
+                    self.build_object_key(save_dir, file_name),
+                )
                 data = self.load_data(save_dir, file_name)
                 return {symbol: convert_to_eastern(df, 'date') for symbol, df in data.items()}
             
@@ -185,8 +218,18 @@ class AlpacaMarketsRetriever:
              symbol_or_symbols: str | list[str],
              start: datetime=datetime(2025, 5, 1),
              end: datetime=datetime(2025, 5, 2), 
-             save_dir: str=Constants.Data.Retrieving.Alpaca.BARS_WITH_QUOTES_SAVE_DIR) -> dict[str: pd.DataFrame]:
-        bars = self.bars(symbol_or_symbols, start, end, save_dir=Constants.Data.Retrieving.Alpaca.BARS_SAVE_DIR)
+             save_dir: str=Constants.Data.Retrieving.Alpaca.BARS_WITH_QUOTES_STORAGE_PREFIX) -> dict[str: pd.DataFrame]:
+        bars = self.bars(
+            symbol_or_symbols,
+            start,
+            end,
+            save_dir=Constants.Data.Retrieving.Alpaca.BARS_STORAGE_PREFIX,
+        )
+        logging.info(
+            "Retrieving Alpaca quote estimates from the Alpaca API for %s to %s.",
+            start,
+            end,
+        )
         quotes = {symbol: self._quote_estimation(symbol, start, end) for symbol in symbol_or_symbols}
 
         for symbol, bar_df in bars.items():
@@ -204,13 +247,15 @@ class AlpacaMarketsRetriever:
              symbol_or_symbols: str | list[str],
              start: datetime=datetime(2025, 5, 1),
              end: datetime=datetime(2025, 5, 2), 
-             save_dir: str=Constants.Data.Retrieving.Alpaca.BARS_WITH_QUOTES_SAVE_DIR) -> dict[str: pd.DataFrame]:
+             save_dir: str=Constants.Data.Retrieving.Alpaca.BARS_WITH_QUOTES_STORAGE_PREFIX) -> dict[str: pd.DataFrame]:
         
         if save_dir:
             file_name = self.build_file_name(symbol_or_symbols, start, end)
-            potential_load_path = os.path.join(save_dir, file_name)
-
-            if os.path.exists(potential_load_path): 
+            if self.cache_exists(save_dir, file_name):
+                logging.info(
+                    "Downloading cached Alpaca bars with quotes from cloud storage: %s",
+                    self.build_object_key(save_dir, file_name),
+                )
                 data = self.load_data(save_dir, file_name)
                 return {symbol: convert_to_eastern(df, 'date') for symbol, df in data.items()}
             

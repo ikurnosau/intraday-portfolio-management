@@ -3,13 +3,13 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 
 import logging
-from dotenv import load_dotenv
 import torch
 
 from alpaca.data.live import StockDataStream
 from alpaca.data.enums import DataFeed
 
 from config.experiments.cur_experiment import config
+from config.settings import get_settings
 from core_data_prep.core_data_prep import DataPreparer
 from core_inference.bars_response_handler import BarsResponseHandler
 from core_inference.quotes_response_handler import QuotesResponseHandler
@@ -22,9 +22,7 @@ from data.raw.retrievers.alpaca_markets_retriever import AlpacaMarketsRetriever
 from modeling.modeling_utils import load_model_and_allocator_params
 from core_inference.allocators.signal_predictor_allocator import SignalPredictorAllocator
 
-
-load_dotenv()
-
+settings = get_settings()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 logging.basicConfig(
@@ -49,7 +47,7 @@ repository = Repository(
     retriever=config.data_config.retriever,
 )
 
-alpaca_proxy = AlpacaBrokerageProxy(paper=True)
+alpaca_proxy = AlpacaBrokerageProxy(paper=True, settings=settings)
 backtest_proxy = BacktestBrokerageProxy(repository, config.rl_config.spread_multiplier)
 aggregated_proxy = AggregatedBrokerageProxy([alpaca_proxy, backtest_proxy])
 
@@ -77,6 +75,7 @@ trader = Trader(
     brokerage_proxy=aggregated_proxy,
     repository=repository,
     portfolio_allocator=allocator,
+    settings=settings,
 )
 
 quotes_response_handler = QuotesResponseHandler(repository)
@@ -89,8 +88,8 @@ async def quotes_handler(data):
     await quotes_response_handler.handle(data)
 
 wss_client = StockDataStream(
-    os.getenv('API_KEY'),
-    os.getenv('API_SECRET'),
+    settings.alpaca.paper_api_key,
+    settings.alpaca.paper_api_secret,
     feed=DataFeed.SIP
 )
 

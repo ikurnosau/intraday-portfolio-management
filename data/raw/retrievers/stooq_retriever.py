@@ -8,7 +8,6 @@ from alpaca.data.timeframe import TimeFrame
 
 from datetime import datetime, timedelta, timezone
 import pandas as pd
-from dotenv import load_dotenv
 import os
 import pickle 
 import gdown

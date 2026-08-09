@@ -1,4 +1,3 @@
-import os
 import logging
 import time
 
@@ -6,14 +5,24 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderStatus
 
+from config.settings import Settings, get_settings
 from core_inference.brokerage_proxies.base_brokerage_proxy import BaseBrokerageProxy
 from core_inference.models.brokerage_state import BrokerageState
 
 
 class AlpacaBrokerageProxy(BaseBrokerageProxy):
-    def __init__(self, paper: bool=True): 
+    def __init__(
+        self,
+        paper: bool = True,
+        settings: Settings | None = None,
+    ):
+        settings = settings or get_settings()
         self.paper = paper
-        self.trading_client = TradingClient(os.getenv('API_KEY'), os.getenv('API_SECRET'), paper=self.paper)
+        self.trading_client = TradingClient(
+            settings.alpaca.paper_api_key,
+            settings.alpaca.paper_api_secret,
+            paper=self.paper,
+        )
 
         open_positions = self.trading_client.get_all_positions()
         logging.info(

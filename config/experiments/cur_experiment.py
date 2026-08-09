@@ -38,7 +38,7 @@ horizon = 1
 target = TripleClassification(horizon=horizon, base_feature='close')
 
 data_config = DataConfig(
-    retriever=AlpacaMarketsRetriever(download_from_gdrive=False, timeframe=frequency),
+    retriever=AlpacaMarketsRetriever(timeframe=frequency),
     symbol_or_symbols=Constants.Data.LOWEST_VOL_TO_COST_100_DEC_2025,
     frequency=frequency,
 
@@ -47,8 +47,8 @@ data_config = DataConfig(
     # train_set_last_date=datetime(2025, 4, 1, tzinfo=timezone.utc),
     # val_set_last_date=datetime(2025, 5, 1, tzinfo=timezone.utc),
 
-    start=datetime(2024, 11, 1, tzinfo=Constants.Data.EASTERN_TZ),
-    end=datetime(2026, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    start=datetime(2026, 1, 1, tzinfo=Constants.Data.EASTERN_TZ),
+    end=datetime(2026, 2, 1, tzinfo=Constants.Data.EASTERN_TZ),
     train_set_last_date=datetime(2025, 10, 1, tzinfo=Constants.Data.EASTERN_TZ), 
     val_set_last_date=datetime(2025, 11, 1, tzinfo=Constants.Data.EASTERN_TZ),
 

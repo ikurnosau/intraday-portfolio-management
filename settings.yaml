@@ -1,0 +1,8 @@
+b2:
+  endpoint_url: https://s3.us-east-005.backblazeb2.com
+  region: us-east-005
+  bucket_name: intraday-portfolio-management
+  key_prefix: alpaca
+
+runtime:
+  enable_torch_compile: false

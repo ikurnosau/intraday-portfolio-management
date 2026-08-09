@@ -4,7 +4,9 @@ scikit-learn
 lightgbm
 tqdm
 alpaca-py
+boto3
 python-dotenv
+PyYAML
 blinker>=1.4 
 gdown
 matplotlib
