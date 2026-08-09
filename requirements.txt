@@ -4,6 +4,7 @@ scikit-learn
 lightgbm
 tqdm
 alpaca-py
+typing_extensions>=4.14.1
 boto3
 python-dotenv
 PyYAML
