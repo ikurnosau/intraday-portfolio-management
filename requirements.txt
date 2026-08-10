@@ -15,3 +15,4 @@ pytorch-tcn
 polars
 pyarrow
 pytz
+exchange-calendars

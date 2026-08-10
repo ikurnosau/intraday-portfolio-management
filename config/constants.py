@@ -57,6 +57,22 @@ class Constants:
             'XLE', 'XLI', 'XLK', 'XLU', 'XLV', 'XLY', 'XOM', 'XRT'
         ]
 
+        LOWEST_VOL_TO_COST_100_JULY_2026 = [
+            'AAPL', 'AMD', 'AMZN', 'APLD', 'ARKK', 'ASX', 'AVGO', 'BAC',
+            'BKNG', 'BKR', 'BMY', 'BSX', 'CIFR', 'CSCO', 'CSX', 'CTSH',
+            'DIA', 'DRAM', 'DVN', 'EEM', 'EFA', 'EWJ', 'EWT', 'EWY',
+            'FCX', 'GDX', 'GLD', 'GOOG', 'GOOGL', 'HOOD', 'HPE', 'IEFA',
+            'IEMG', 'IGV', 'IJR', 'INTC', 'IONQ', 'IREN', 'IVV', 'IVW',
+            'IWF', 'IWM', 'IYR', 'KLAC', 'KO', 'KRE', 'MARA', 'MRVL',
+            'MSFT', 'MSTR', 'MU', 'NBIS', 'NEE', 'NFLX', 'NKE', 'NOW',
+            'NVDA', 'ORCL', 'OXY', 'PLTR', 'PYPL', 'QBTS', 'QLD', 'QQQ',
+            'QQQM', 'RIOT', 'RKLB', 'RSP', 'SLB', 'SLV', 'SMCI', 'SMH',
+            'SOXQ', 'SOXX', 'SPXL', 'SPY', 'SPYG', 'STM', 'TFC', 'TQQQ',
+            'TSLA', 'TSM', 'USB', 'VGT', 'VNQ', 'VOO', 'VTI', 'VTWO',
+            'VUG', 'VZ', 'WMT', 'WULF', 'XLC', 'XLE', 'XLI', 'XLK',
+            'XLP', 'XLV', 'XLY', 'XOM'
+        ]
+
         DJIA = [
             "MMM",  # 3M
             "AXP",  # American Express

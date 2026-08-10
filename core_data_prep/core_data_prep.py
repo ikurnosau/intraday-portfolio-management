@@ -20,6 +20,7 @@ import logging
 import numpy as np
 import polars as pl
 import time
+import exchange_calendars as xcals
 from numpy.lib.stride_tricks import sliding_window_view
 from data.processed.data_processing_utils import filter_by_regular_hours
 from core_data_prep.validations import Validator
@@ -315,14 +316,19 @@ class DataPreparer:
                         ) -> list[dict[str, pd.DataFrame]]:
         current_day = pd.to_datetime(start_date).normalize()
         end_day = pd.to_datetime(end_date).normalize()
+        xnys_calendar = xcals.get_calendar(
+            "XNYS",
+            start=current_day.date(),
+            end=end_day.date(),
+        )
 
         cur_row_i = defaultdict(int)
         slices: list[dict[str, pd.DataFrame]] = []
         while current_day < end_day:
             slice_end_target = pd.Timestamp(current_day) + pd.Timedelta(hours=end_hour)
             current_day = current_day + pd.DateOffset(days=1)
-            
-            if slice_end_target.dayofweek < 5:
+
+            if xnys_calendar.is_session(slice_end_target.date()):
                 cur_day_slices: dict[str, pd.DataFrame] = {}
                 for symbol, df in data.items():
                     while cur_row_i[symbol] < len(df) and df[self.date_column][cur_row_i[symbol]] <= slice_end_target:
