@@ -56,9 +56,28 @@ class B2ObjectStore:
             self._full_key(key),
         )
 
-    def download_fileobj(self, key: str, file_object: BinaryIO) -> None:
-        self.client.download_fileobj(
-            self.bucket,
-            self._full_key(key),
-            file_object,
+    def download_fileobj(
+        self,
+        key: str,
+        file_object: BinaryIO,
+    ) -> None:
+        full_key = self._full_key(key)
+        from tqdm.auto import tqdm
+
+        metadata = self.client.head_object(
+            Bucket=self.bucket,
+            Key=full_key,
         )
+        with tqdm(
+            total=metadata["ContentLength"],
+            desc=f"Downloading {key.rsplit('/', 1)[-1]}",
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+        ) as progress:
+            self.client.download_fileobj(
+                self.bucket,
+                full_key,
+                file_object,
+                Callback=progress.update,
+            )

@@ -93,13 +93,20 @@ class AlpacaMarketsRetriever:
             output_file.seek(0)
             self.object_store.upload_fileobj(object_key, output_file)
 
-    def load_data(self, storage_prefix: str, file_name: str) -> object:
+    def load_data(
+        self,
+        storage_prefix: str,
+        file_name: str,
+    ) -> object:
         object_key = self.build_object_key(storage_prefix, file_name)
         with tempfile.SpooledTemporaryFile(
             max_size=64 * 1024 * 1024,
             mode="w+b",
         ) as input_file:
-            self.object_store.download_fileobj(object_key, input_file)
+            self.object_store.download_fileobj(
+                object_key,
+                input_file,
+            )
             input_file.seek(0)
             return _NumpyCoreRedirectingUnpickler(input_file).load()
 
@@ -184,6 +191,7 @@ class AlpacaMarketsRetriever:
 
     def _quote_estimation(self, symbol: str, start: datetime, end: datetime) -> dict[str: float]:
         start = pd.to_datetime(start).tz_convert(Constants.Data.EASTERN_TZ)
+        end = pd.to_datetime(end).tz_convert(Constants.Data.EASTERN_TZ)
         start = datetime.combine(start.date(), Constants.Data.REGULAR_TRADING_HOURS_START)
         start = start.replace(tzinfo=Constants.Data.EASTERN_TZ) + timedelta(hours=2)
 

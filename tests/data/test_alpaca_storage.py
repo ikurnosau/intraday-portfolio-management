@@ -1,4 +1,6 @@
 from io import BytesIO
+from datetime import datetime
+from types import SimpleNamespace
 
 from data.object_store import B2ObjectStore
 from data.raw.retrievers.alpaca_markets_retriever import AlpacaMarketsRetriever
@@ -16,12 +18,22 @@ class FakeS3Client:
     def head_object(self, Bucket, Key):
         if (Bucket, Key) not in self.objects:
             raise FakeClientError("404")
+        return {"ContentLength": len(self.objects[(Bucket, Key)])}
 
     def upload_fileobj(self, file_object, bucket, key):
         self.objects[(bucket, key)] = file_object.read()
 
-    def download_fileobj(self, bucket, key, file_object):
-        file_object.write(self.objects[(bucket, key)])
+    def download_fileobj(
+        self,
+        bucket,
+        key,
+        file_object,
+        Callback=None,
+    ):
+        payload = self.objects[(bucket, key)]
+        file_object.write(payload)
+        if Callback is not None:
+            Callback(len(payload))
 
 
 def test_b2_object_store_prefix_and_round_trip():
@@ -52,3 +64,31 @@ def test_retriever_pickles_through_object_store():
 
     assert retriever.cache_exists("bars", "sample.pkl")
     assert retriever.load_data("bars", "sample.pkl") == payload
+
+
+def test_quote_estimation_accepts_fixed_offset_endpoints():
+    quote = SimpleNamespace(
+        ask_price=101.0,
+        ask_size=10,
+        bid_price=100.0,
+        bid_size=12,
+    )
+
+    class QuoteRetriever(AlpacaMarketsRetriever):
+        def quotes(self, *args, **kwargs):
+            return {"AAPL": [quote]}
+
+    retriever = QuoteRetriever()
+
+    result = retriever._quote_estimation(
+        "AAPL",
+        start=datetime.fromisoformat("2024-11-01T00:00:00-04:00"),
+        end=datetime.fromisoformat("2026-08-01T00:00:00-05:00"),
+    )
+
+    assert result == {
+        "ask_price": 101.0,
+        "ask_size": 10,
+        "bid_price": 100.0,
+        "bid_size": 12,
+    }
