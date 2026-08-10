@@ -118,6 +118,13 @@ class ContinuousForwardFillPolars:
     def __call__(
         self, data: dict[str, pd.DataFrame], date_column: str = "date"
     ) -> dict[str, pd.DataFrame]:
+        tz_str = (
+            Constants.Data.EASTERN_TZ
+            if isinstance(Constants.Data.EASTERN_TZ, str)
+            else str(Constants.Data.EASTERN_TZ)
+        )
+        date_dtype = pl.Datetime(time_unit="ns", time_zone=tz_str)
+
         # --- gather column names ahead of lazy context -----------------
         available_cols: set[str] = set()
         for df in data.values():
@@ -134,7 +141,10 @@ class ContinuousForwardFillPolars:
 
         lazy_frames = [
             pl.from_pandas(df)
-              .with_columns(pl.lit(asset).alias("asset_id"))
+              .with_columns([
+                  pl.col(date_column).cast(date_dtype),
+                  pl.lit(asset).alias("asset_id"),
+              ])
               .lazy()
             for asset, df in processed_items
         ]
@@ -146,11 +156,6 @@ class ContinuousForwardFillPolars:
         # --- 3. build a “calendar” per asset_id ------------------------
         calendars = []
         for asset in data:
-            tz_str = (
-                Constants.Data.EASTERN_TZ
-                if isinstance(Constants.Data.EASTERN_TZ, str)
-                else str(Constants.Data.EASTERN_TZ)
-            )
             dates = pl.datetime_range(
                 start=data[asset][date_column].min(),
                 end=last_ts_expr,

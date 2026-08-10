@@ -4,7 +4,10 @@ from datetime import datetime
 
 import pandas.testing as pdt
 
-from data.processed.missing_values_handling import ForwardFillFlatBars
+from data.processed.missing_values_handling import (
+    ContinuousForwardFillPolars,
+    ForwardFillFlatBars,
+)
 
 
 def _make_partial_day_df():
@@ -75,3 +78,26 @@ def test_newly_filled_rows_values():
 
     # Close must be forward-filled relative to the previous available close
     assert filled["close"].equals(filled["close"].ffill()) 
+
+
+def test_polars_fill_normalizes_microsecond_datetime_join_keys():
+    dates = pd.Series(pd.to_datetime([
+        "2026-08-03 09:30:00-04:00",
+        "2026-08-03 09:32:00-04:00",
+    ])).astype("datetime64[us, UTC-04:00]")
+    data = {
+        "AAPL": pd.DataFrame({
+            "date": dates,
+            "open": [100.0, 102.0],
+            "high": [101.0, 103.0],
+            "low": [99.0, 101.0],
+            "close": [100.0, 102.0],
+            "volume": [10.0, 12.0],
+        })
+    }
+
+    filled = ContinuousForwardFillPolars("1Min")(data)["AAPL"]
+
+    assert len(filled) == 3
+    assert filled["date"].dtype == "datetime64[ns, America/New_York]"
+    assert filled.loc[1, "is_missing"] == 1.0
