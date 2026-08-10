@@ -1,110 +1,110 @@
 schema_version: 1
-config_revision: 3
+config_revision: 4
 
 data:
   retriever:
     name: alpaca_markets
   symbols:
     - AAPL
-    - ACWI
     - AMD
     - AMZN
     - APLD
+    - ARKK
+    - ASX
     - AVGO
     - BAC
-    - BITB
-    - BITU
+    - BKNG
+    - BKR
     - BMY
-    - BOIL
-    - C
+    - BSX
     - CIFR
-    - CLSK
     - CSCO
+    - CSX
+    - CTSH
     - DIA
-    - DKNG
-    - ETHA
+    - DRAM
+    - DVN
+    - EEM
+    - EFA
+    - EWJ
+    - EWT
     - EWY
-    - FBTC
-    - GBTC
+    - FCX
     - GDX
     - GLD
     - GOOG
     - GOOGL
     - HOOD
-    - IBIT
+    - HPE
+    - IEFA
+    - IEMG
     - IGV
     - IJR
     - INTC
     - IONQ
     - IREN
-    - ITOT
     - IVV
     - IVW
-    - IWD
+    - IWF
     - IWM
     - IYR
+    - KLAC
     - KO
     - KRE
     - MARA
-    - META
-    - MRK
     - MRVL
     - MSFT
     - MSTR
     - MU
+    - NBIS
+    - NEE
     - NFLX
     - NKE
+    - NOW
     - NVDA
-    - NVO
     - ORCL
+    - OXY
     - PLTR
     - PYPL
     - QBTS
     - QLD
     - QQQ
     - QQQM
-    - QUAL
-    - RGTI
     - RIOT
+    - RKLB
     - RSP
+    - SLB
     - SLV
     - SMCI
     - SMH
-    - SMR
-    - SOFI
-    - SOXL
+    - SOXQ
     - SOXX
     - SPXL
     - SPY
     - SPYG
-    - SSO
-    - TNA
+    - STM
+    - TFC
     - TQQQ
     - TSLA
     - TSM
-    - UBER
-    - UPRO
-    - VONG
+    - USB
+    - VGT
+    - VNQ
     - VOO
-    - VT
     - VTI
-    - VTV
     - VTWO
-    - VYM
-    - WFC
+    - VUG
+    - VZ
     - WMT
     - WULF
-    - XBI
-    - XLB
     - XLC
     - XLE
     - XLI
     - XLK
-    - XLU
+    - XLP
     - XLV
     - XLY
     - XOM
-    - XRT
   frequency:
     amount: 1
     unit: Minute
