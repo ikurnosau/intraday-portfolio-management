@@ -13,8 +13,7 @@ import pandas as pd
 import numpy as np
 
 from config.constants import Constants
-from config.experiment_config import ExperimentConfig, ObservabilityConfig
-from config.config_serialization import serialize_config
+from config.experiment_config import ExperimentConfig
 
 
 
@@ -52,8 +51,25 @@ def log_experiment(
 
     # Start an MLflow run
     with mlflow.start_run():
-        # Log the hyperparameters
-        mlflow.log_params(serialize_config(config))
+        if config.raw_config is None:
+            raise ValueError(
+                "Experiment config has no serializable source manifest"
+            )
+
+        # Keep the full resolved config as an artifact and only searchable,
+        # scalar values as MLflow parameters.
+        mlflow.log_dict(config.raw_config, "config/train_config.json")
+        mlflow.log_params({
+            "schema_version": config.raw_config["schema_version"],
+            "config_revision": config.raw_config["config_revision"],
+            "model": config.raw_config["model"]["name"],
+            "feature_count": len(config.raw_config["data"]["features"]),
+            "symbol_count": len(config.raw_config["data"]["symbols"]),
+            "batch_size": config.raw_config["train"]["batch_size"],
+            "learning_rate": config.raw_config["train"]["optimizer"]
+                .get("params", {})
+                .get("lr"),
+        })
 
         if validator_snapshots is not None:
             log_snapshots(validator_snapshots, prefix="validator_snapshots")

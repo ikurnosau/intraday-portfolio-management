@@ -1,0 +1,257 @@
+schema_version: 1
+config_revision: 1
+
+data:
+  retriever:
+    name: alpaca_markets
+  symbols:
+    - AAPL
+    - ACWI
+    - AMD
+    - AMZN
+    - APLD
+    - AVGO
+    - BAC
+    - BITB
+    - BITU
+    - BMY
+    - BOIL
+    - C
+    - CIFR
+    - CLSK
+    - CSCO
+    - DIA
+    - DKNG
+    - ETHA
+    - EWY
+    - FBTC
+    - GBTC
+    - GDX
+    - GLD
+    - GOOG
+    - GOOGL
+    - HOOD
+    - IBIT
+    - IGV
+    - IJR
+    - INTC
+    - IONQ
+    - IREN
+    - ITOT
+    - IVV
+    - IVW
+    - IWD
+    - IWM
+    - IYR
+    - KO
+    - KRE
+    - MARA
+    - META
+    - MRK
+    - MRVL
+    - MSFT
+    - MSTR
+    - MU
+    - NFLX
+    - NKE
+    - NVDA
+    - NVO
+    - ORCL
+    - PLTR
+    - PYPL
+    - QBTS
+    - QLD
+    - QQQ
+    - QQQM
+    - QUAL
+    - RGTI
+    - RIOT
+    - RSP
+    - SLV
+    - SMCI
+    - SMH
+    - SMR
+    - SOFI
+    - SOXL
+    - SOXX
+    - SPXL
+    - SPY
+    - SPYG
+    - SSO
+    - TNA
+    - TQQQ
+    - TSLA
+    - TSM
+    - UBER
+    - UPRO
+    - VONG
+    - VOO
+    - VT
+    - VTI
+    - VTV
+    - VTWO
+    - VYM
+    - WFC
+    - WMT
+    - WULF
+    - XBI
+    - XLB
+    - XLC
+    - XLE
+    - XLI
+    - XLK
+    - XLU
+    - XLV
+    - XLY
+    - XOM
+    - XRT
+  frequency:
+    amount: 1
+    unit: Minute
+  start: "2026-01-01T00:00:00-05:00"
+  end: "2026-02-01T00:00:00-05:00"
+  train_set_last_date: "2026-01-10T00:00:00-05:00"
+  val_set_last_date: "2026-01-20T00:00:00-05:00"
+  features:
+    - output: log_ret
+      name: log_return
+    - output: hl_range
+      name: high_low_range
+    - output: close_open
+      name: close_open_return
+    - output: vol_delta
+      name: log_volume_change
+    - output: SMA_fast
+      name: sma
+      params:
+        period: 3
+    - output: SMA_slow
+      name: sma
+      params:
+        period: 30
+    - output: RSI2
+      name: rsi
+      params:
+        period: 2
+    - output: RSI6
+      name: rsi
+      params:
+        period: 6
+    - output: realvol20
+      name: realized_volatility
+      params:
+        window: 20
+    - output: VWAP_dist
+      name: rolling_vwap_distance
+      params:
+        period: 30
+    - output: loc_in_range
+      name: location_in_range
+    - output: tod_sin
+      name: time_of_day_cyclic
+      params:
+        function: sin
+        offset: -0.19212672
+    - output: tod_cos
+      name: time_of_day_cyclic
+      params:
+        function: cos
+        offset: 0.018629849
+    - output: sma_slope
+      name: moving_average_slope
+      params:
+        kind: SMA
+        fast_period: 3
+        slow_period: 15
+    - output: vol_slope
+      name: volatility_slope
+      params:
+        fast_window: 10
+        slow_window: 20
+    - output: is_missing
+      name: column
+      params:
+        name: is_missing
+  statistics:
+    - output: next_return
+      name: future_return
+      params:
+        horizon: 1
+    - output: volatility
+      name: rolling_volatility
+      params:
+        window: 10
+    - output: spread
+      name: relative_spread
+      params:
+        denominator: close
+  target:
+    name: triple_classification
+    params:
+      horizon: 1
+      base_feature: close
+  normalizer:
+    name: min_max_over_window
+    params:
+      window: 60
+      fit_feature: null
+  missing_values_handler:
+    name: continuous_forward_fill_polars
+  in_seq_len: 60
+  horizon: 1
+  multi_asset_prediction: true
+
+model:
+  name: temporal_spatial
+  registered_model_name: TemporalSpatial Regressor
+  params:
+    output_dim: 1
+    hidden_dim: 128
+    lstm_layers: 2
+    bidirectional: true
+    dropout: 0.2
+    num_heads: 4
+    use_spatial_attention: true
+    asset_embed_dim: 16
+
+train:
+  loss:
+    name: mse
+  optimizer:
+    name: adamw
+    params:
+      lr: 0.001
+      weight_decay: 1.0e-10
+      amsgrad: true
+  scheduler:
+    type: OneCycleLR
+    max_lr: 0.003
+    pct_start: 0.1
+    div_factor: 25
+    final_div_factor: 1000
+    anneal_strategy: cos
+    cycle_momentum: false
+  metrics:
+    - output: rmse
+      name: rmse_regression
+  num_epochs: 20
+  early_stopping_patience: 10
+  device: cuda
+  cudnn_benchmark: true
+  batch_size: 128
+  shuffle: true
+  num_workers: 8
+  prefetch_factor: 4
+  pin_memory: true
+  persistent_workers: true
+  drop_last: true
+  save_path: ""
+
+rl:
+  trajectory_length: 12
+  fee: 0.0
+  spread_multiplier: 1.5
+  trade_asset_count: 1
+
+observability:
+  experiment_name: Return Regression MLP

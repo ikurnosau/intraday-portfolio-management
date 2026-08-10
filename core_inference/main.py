@@ -8,7 +8,7 @@ import torch
 from alpaca.data.live import StockDataStream
 from alpaca.data.enums import DataFeed
 
-from config.experiments.cur_experiment import config
+from config.train_config import load_train_config
 from config.settings import get_settings
 from core_data_prep.core_data_prep import DataPreparer
 from core_inference.bars_response_handler import BarsResponseHandler
@@ -23,6 +23,7 @@ from modeling.modeling_utils import load_model_and_allocator_params
 from core_inference.allocators.signal_predictor_allocator import SignalPredictorAllocator
 
 settings = get_settings()
+config = load_train_config()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 logging.basicConfig(

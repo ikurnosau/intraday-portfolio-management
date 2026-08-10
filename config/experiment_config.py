@@ -88,3 +88,4 @@ class ExperimentConfig:
     train_config: TrainConfig    
     rl_config: RLConfig
     observability_config: ObservabilityConfig
+    raw_config: dict[str, Any] | None = None

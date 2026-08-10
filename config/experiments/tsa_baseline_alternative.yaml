@@ -1,0 +1,103 @@
+extends: ./tsa_allocation_baseline.yaml
+
+data:
+  start: "2024-06-01T00:00:00+00:00"
+  end: "2025-06-01T00:00:00+00:00"
+  train_set_last_date: "2025-05-01T00:00:00+00:00"
+  val_set_last_date: "2025-06-01T00:00:00+00:00"
+  features:
+    - output: log_ret
+      name: log_return
+    - output: hl_range
+      name: high_low_range
+    - output: close_open
+      name: close_open_return
+    - output: vol_delta
+      name: log_volume_change
+    - output: EMA_fast
+      name: ema
+      params:
+        period: 3
+    - output: EMA_slow
+      name: ema
+      params:
+        period: 30
+    - output: RSI2
+      name: rsi
+      params:
+        period: 2
+    - output: RSI6
+      name: rsi
+      params:
+        period: 6
+    - output: realvol20
+      name: realized_volatility
+      params:
+        window: 20
+    - output: VWAP_dist
+      name: vwap_distance
+    - output: loc_in_range
+      name: location_in_range
+    - output: tod_sin
+      name: time_of_day_cyclic
+      params:
+        function: sin
+    - output: tod_cos
+      name: time_of_day_cyclic
+      params:
+        function: cos
+    - output: ema_slope
+      name: moving_average_slope
+      params:
+        kind: EMA
+        fast_period: 3
+        slow_period: 15
+    - output: vol_slope
+      name: volatility_slope
+      params:
+        fast_window: 10
+        slow_window: 20
+  target:
+    name: future_mean_return_classification
+    params:
+      base_feature: close
+      horizon: 1
+      class_values:
+        - 0.0
+        - 0.25
+        - 0.5
+        - 0.75
+        - 1.0
+  in_seq_len: 180
+
+model:
+  name: temporal_spatial
+  registered_model_name: TemporalSpatial Regressor
+  params:
+    output_dim: 1
+    hidden_dim: 256
+    lstm_layers: 3
+    bidirectional: true
+    dropout: 0.2
+    num_heads: 4
+    use_spatial_attention: true
+    asset_embed_dim: 16
+
+train:
+  loss:
+    name: mse
+  scheduler:
+    type: OneCycleLR
+    max_lr: 0.001
+    pct_start: 0.2
+    div_factor: 25
+    final_div_factor: 10000
+    anneal_strategy: cos
+    cycle_momentum: false
+  metrics:
+    - output: rmse
+      name: rmse_regression
+  early_stopping_patience: 20
+
+rl:
+  spread_multiplier: 1.5

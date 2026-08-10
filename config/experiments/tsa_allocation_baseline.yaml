@@ -1,0 +1,170 @@
+extends: ../../train_config.yaml
+
+data:
+  symbols:
+    - AAPL
+    - AMD
+    - BABA
+    - BITU
+    - C
+    - CSCO
+    - DAL
+    - DIA
+    - GLD
+    - GOOG
+    - IJR
+    - MARA
+    - MRVL
+    - MU
+    - NEE
+    - NKE
+    - NVDA
+    - "ON"
+    - PLTR
+    - PYPL
+    - QLD
+    - QQQ
+    - QQQM
+    - RKLB
+    - RSP
+    - SMCI
+    - SMH
+    - SOXL
+    - SOXX
+    - SPXL
+    - SPY
+    - TMF
+    - TNA
+    - TQQQ
+    - TSLA
+    - UBER
+    - UDOW
+    - UPRO
+    - VOO
+    - WFC
+    - XBI
+    - XLC
+    - XLE
+    - XLI
+    - XLK
+    - XLU
+    - XLV
+    - XLY
+    - XOM
+    - XRT
+  start: "2024-09-01T00:00:00-04:00"
+  end: "2025-10-01T00:00:00-04:00"
+  train_set_last_date: "2025-07-01T00:00:00-04:00"
+  val_set_last_date: "2025-08-01T00:00:00-04:00"
+  features:
+    - output: log_ret
+      name: log_return
+    - output: hl_range
+      name: high_low_range
+    - output: close_open
+      name: close_open_return
+    - output: vol_delta
+      name: log_volume_change
+    - output: EMA_fast
+      name: ema
+      params:
+        period: 3
+    - output: EMA_slow
+      name: ema
+      params:
+        period: 30
+    - output: RSI2
+      name: rsi
+      params:
+        period: 2
+    - output: RSI6
+      name: rsi
+      params:
+        period: 6
+    - output: realvol20
+      name: realized_volatility
+      params:
+        window: 20
+    - output: VWAP_dist
+      name: vwap_distance
+    - output: loc_in_range
+      name: location_in_range
+    - output: tod_sin
+      name: time_of_day_cyclic
+      params:
+        function: sin
+        offset: -0.19212672
+    - output: tod_cos
+      name: time_of_day_cyclic
+      params:
+        function: cos
+        offset: 0.018629849
+    - output: ema_slope
+      name: moving_average_slope
+      params:
+        kind: EMA
+        fast_period: 3
+        slow_period: 15
+    - output: vol_slope
+      name: volatility_slope
+      params:
+        fast_window: 10
+        slow_window: 20
+    - output: is_missing
+      name: column
+      params:
+        name: is_missing
+    - output: spread
+      name: relative_spread
+      params:
+        denominator: ask_price
+  statistics:
+    - output: next_return
+      name: future_return
+      params:
+        horizon: 1
+    - output: volatility
+      name: rolling_volatility
+      params:
+        window: 10
+    - output: spread
+      name: relative_spread
+      params:
+        denominator: ask_price
+  target:
+    name: return_over_horizon
+    params:
+      horizon: 1
+      base_feature: close
+
+model:
+  name: temporal_spatial_allocator
+  registered_model_name: TemporalSpatial Regressor
+  params:
+    output_dim: 1
+    hidden_dim: 128
+    lstm_layers: 2
+    bidirectional: true
+    dropout: 0.2
+    num_heads: 4
+    use_spatial_attention: true
+    asset_embed_dim: 16
+
+train:
+  loss:
+    name: risk_adjusted_position_return
+    params:
+      fee: 0.0
+      risk_lambda: 0.0
+  metrics:
+    - output: log_return
+      name: position_return
+      params:
+        fee: 0.0
+    - output: mean_return
+      name: mean_return
+      params:
+        fee: 0.0
+
+rl:
+  spread_multiplier: 0.67

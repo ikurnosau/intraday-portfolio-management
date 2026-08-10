@@ -2,7 +2,7 @@
 # ... existing code ...
 # Creating Polars-based versions of most frequently used indicators so that feature engineering can be
 # performed directly in Polars and — where required — in lazy mode.
-# NOTE: Only the indicators currently required by `cur_experiment.py` are implemented. Add more as needed.
+# NOTE: Only indicators exposed through the YAML config registry are implemented.
 
 import polars as pl
 from typing import Union

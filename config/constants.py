@@ -5,9 +5,6 @@ from zoneinfo import ZoneInfo
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 class Constants:
-    class Configuration: 
-        EXPERIMENT_CONFIGS_DIR = 'experimets/'
-
     class Data:
         MOST_LIQUID_TECH_STOCKS = [
             "AAPL", "MSFT", "NVDA", "GOOGL", "GOOG",
