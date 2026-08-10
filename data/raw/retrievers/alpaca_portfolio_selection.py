@@ -10,6 +10,33 @@ from data.raw.retrievers.alpaca_markets_retriever import AlpacaMarketsRetriever
 from config.constants import *
 
 
+def inspect_portfolio_history_depths(
+    portfolio: list[tuple[str, float]],
+    retriever: AlpacaMarketsRetriever,
+) -> list[str]:
+    symbols = [symbol for symbol, _ in portfolio]
+    for symbol in symbols:
+        print(symbol, retriever.get_history_depth(symbol))
+
+
+async def calculate_portfolio_cap_share(
+    portfolio: list[tuple[str, float]],
+    date: datetime,
+) -> float:
+    retriever = AlpacaMarketsRetriever()
+    all_symbols = retriever.get_all_symbols()
+    daily_stats, _ = await get_daily_stats(all_symbols, date)
+
+    portfolio_cap = sum(
+        daily_stats[symbol]["price"] * daily_stats[symbol]["daily_volume"]
+        for symbol, _ in portfolio
+    )
+    total_cap = sum(
+        stats["price"] * stats["daily_volume"] for stats in daily_stats.values()
+    )
+    return portfolio_cap / total_cap
+
+
 def get_quotes_snapshot(retriever: AlpacaMarketsRetriever, symbols: list[str], date: datetime, verbose: bool=False): 
     left_symbols = set(symbols)
     seconds_lookback = 2
@@ -149,11 +176,12 @@ async def get_daily_stats(symbols: list[str],
 async def select_portfolio(
     symbols: list[str], 
     start_date: datetime, 
-    end_date: datetime, 
+    end_date: datetime,
+    min_history_depth: datetime,
     portfolio_size: int = 100,
     criteria: str = 'E_1m',
     max_retries: int = 3
-):
+) -> tuple[list[tuple[str, float]], list[tuple[str, float, datetime]]]:
     calendar = USFederalHolidayCalendar()
     holidays = calendar.holidays(start=start_date, end=end_date)
     all_b_days = pd.bdate_range(start=start_date, end=end_date)
@@ -191,5 +219,17 @@ async def select_portfolio(
         final_scores.append((symbol, q25_value))
 
     final_scores.sort(key=lambda x: x[1], reverse=True)
-    
-    return final_scores[:portfolio_size]
+
+    retriever = AlpacaMarketsRetriever()
+    portfolio = []
+    skipped_assets = []
+    for symbol, score in final_scores:
+        history_depth = retriever.get_history_depth(symbol)
+        if history_depth <= min_history_depth:
+            portfolio.append((symbol, score))
+            if len(portfolio) == portfolio_size:
+                break
+        else:
+            skipped_assets.append((symbol, score, history_depth))
+
+    return portfolio, skipped_assets
