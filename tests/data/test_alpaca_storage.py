@@ -1,5 +1,5 @@
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from data.object_store import B2ObjectStore
@@ -92,3 +92,29 @@ def test_quote_estimation_accepts_fixed_offset_endpoints():
         "bid_price": 100.0,
         "bid_size": 12,
     }
+
+
+def test_has_bars_checks_requested_history_window():
+    class HistoryClient:
+        def __init__(self):
+            self.requests = []
+
+        def get_stock_bars(self, request):
+            self.requests.append(request)
+            data = {"AAPL": [SimpleNamespace()]} if request.symbol_or_symbols == "AAPL" else {}
+            return SimpleNamespace(data=data)
+
+    client = HistoryClient()
+    retriever = AlpacaMarketsRetriever()
+    retriever._client = client
+    start = datetime.fromisoformat("2024-10-01T00:00:00-04:00")
+    end = datetime.fromisoformat("2024-11-01T00:00:00-04:00")
+
+    assert retriever.has_bars("AAPL", start, end)
+    assert not retriever.has_bars("DRAM", start, end)
+    expected_start = start.astimezone(timezone.utc).replace(tzinfo=None)
+    expected_end = end.astimezone(timezone.utc).replace(tzinfo=None)
+    assert all(
+        request.start == expected_start and request.end == expected_end
+        for request in client.requests
+    )

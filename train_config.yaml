@@ -1,42 +1,39 @@
 schema_version: 1
-config_revision: 4
+config_revision: 5
 
 data:
   retriever:
     name: alpaca_markets
   symbols:
     - AAPL
+    - ACWI
     - AMD
     - AMZN
     - APLD
     - ARKK
-    - ASX
     - AVGO
+    - B
     - BAC
     - BKNG
-    - BKR
     - BMY
     - BSX
     - CIFR
     - CSCO
-    - CSX
-    - CTSH
     - DIA
-    - DRAM
     - DVN
     - EEM
     - EFA
-    - EWJ
+    - EMXC
     - EWT
     - EWY
+    - FBTC
     - FCX
     - GDX
     - GLD
     - GOOG
     - GOOGL
     - HOOD
-    - HPE
-    - IEFA
+    - IBIT
     - IEMG
     - IGV
     - IJR
@@ -48,15 +45,14 @@ data:
     - IWF
     - IWM
     - IYR
-    - KLAC
     - KO
     - KRE
     - MARA
+    - META
     - MRVL
     - MSFT
     - MSTR
     - MU
-    - NBIS
     - NEE
     - NFLX
     - NKE
@@ -70,14 +66,15 @@ data:
     - QLD
     - QQQ
     - QQQM
+    - RGTI
     - RIOT
     - RKLB
     - RSP
+    - SHEL
     - SLB
     - SLV
     - SMCI
     - SMH
-    - SOXQ
     - SOXX
     - SPXL
     - SPY
@@ -87,16 +84,19 @@ data:
     - TQQQ
     - TSLA
     - TSM
+    - UBER
+    - UPRO
     - USB
-    - VGT
     - VNQ
     - VOO
+    - VT
     - VTI
     - VTWO
     - VUG
-    - VZ
+    - WFC
     - WMT
     - WULF
+    - XBI
     - XLC
     - XLE
     - XLI

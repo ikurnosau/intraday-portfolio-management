@@ -225,7 +225,12 @@ async def select_portfolio(
     skipped_assets = []
     for symbol, score in final_scores:
         history_depth = retriever.get_history_depth(symbol)
-        if history_depth <= min_history_depth:
+        has_bars_near_minimum_depth = retriever.has_bars(
+            symbol,
+            start=min_history_depth,
+            end=min_history_depth + timedelta(days=31),
+        )
+        if history_depth <= min_history_depth and has_bars_near_minimum_depth:
             portfolio.append((symbol, score))
             if len(portfolio) == portfolio_size:
                 break

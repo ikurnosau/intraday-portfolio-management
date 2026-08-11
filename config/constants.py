@@ -58,18 +58,18 @@ class Constants:
         ]
 
         LOWEST_VOL_TO_COST_100_JULY_2026 = [
-            'AAPL', 'AMD', 'AMZN', 'APLD', 'ARKK', 'ASX', 'AVGO', 'BAC',
-            'BKNG', 'BKR', 'BMY', 'BSX', 'CIFR', 'CSCO', 'CSX', 'CTSH',
-            'DIA', 'DRAM', 'DVN', 'EEM', 'EFA', 'EWJ', 'EWT', 'EWY',
-            'FCX', 'GDX', 'GLD', 'GOOG', 'GOOGL', 'HOOD', 'HPE', 'IEFA',
-            'IEMG', 'IGV', 'IJR', 'INTC', 'IONQ', 'IREN', 'IVV', 'IVW',
-            'IWF', 'IWM', 'IYR', 'KLAC', 'KO', 'KRE', 'MARA', 'MRVL',
-            'MSFT', 'MSTR', 'MU', 'NBIS', 'NEE', 'NFLX', 'NKE', 'NOW',
-            'NVDA', 'ORCL', 'OXY', 'PLTR', 'PYPL', 'QBTS', 'QLD', 'QQQ',
-            'QQQM', 'RIOT', 'RKLB', 'RSP', 'SLB', 'SLV', 'SMCI', 'SMH',
-            'SOXQ', 'SOXX', 'SPXL', 'SPY', 'SPYG', 'STM', 'TFC', 'TQQQ',
-            'TSLA', 'TSM', 'USB', 'VGT', 'VNQ', 'VOO', 'VTI', 'VTWO',
-            'VUG', 'VZ', 'WMT', 'WULF', 'XLC', 'XLE', 'XLI', 'XLK',
+            'AAPL', 'ACWI', 'AMD', 'AMZN', 'APLD', 'ARKK', 'AVGO', 'B',
+            'BAC', 'BKNG', 'BMY', 'BSX', 'CIFR', 'CSCO', 'DIA', 'DVN',
+            'EEM', 'EFA', 'EMXC', 'EWT', 'EWY', 'FBTC', 'FCX', 'GDX',
+            'GLD', 'GOOG', 'GOOGL', 'HOOD', 'IBIT', 'IEMG', 'IGV', 'IJR',
+            'INTC', 'IONQ', 'IREN', 'IVV', 'IVW', 'IWF', 'IWM', 'IYR',
+            'KO', 'KRE', 'MARA', 'META', 'MRVL', 'MSFT', 'MSTR', 'MU',
+            'NEE', 'NFLX', 'NKE', 'NOW', 'NVDA', 'ORCL', 'OXY', 'PLTR',
+            'PYPL', 'QBTS', 'QLD', 'QQQ', 'QQQM', 'RGTI', 'RIOT', 'RKLB',
+            'RSP', 'SHEL', 'SLB', 'SLV', 'SMCI', 'SMH', 'SOXX', 'SPXL',
+            'SPY', 'SPYG', 'STM', 'TFC', 'TQQQ', 'TSLA', 'TSM', 'UBER',
+            'UPRO', 'USB', 'VNQ', 'VOO', 'VT', 'VTI', 'VTWO', 'VUG',
+            'WFC', 'WMT', 'WULF', 'XBI', 'XLC', 'XLE', 'XLI', 'XLK',
             'XLP', 'XLV', 'XLY', 'XOM'
         ]
 

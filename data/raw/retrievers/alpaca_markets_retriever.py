@@ -139,6 +139,24 @@ class AlpacaMarketsRetriever:
         bars = self.client.get_stock_bars(request_params).data[symbol]
         return bars[0].timestamp
 
+    def has_bars(
+        self,
+        symbol: str,
+        start: datetime,
+        end: datetime,
+    ) -> bool:
+        """Return whether a symbol has any daily bar in the given interval."""
+        request_params = StockBarsRequest(
+            symbol_or_symbols=symbol,
+            timeframe=TimeFrame.Day,
+            start=start,
+            end=end,
+            limit=1,
+            feed=self.FEED,
+        )
+        bars = self.client.get_stock_bars(request_params).data
+        return bool(bars.get(symbol))
+
     def _bars(self,
              symbol_or_symbols: str | list[str],
              start: datetime=datetime(2025, 5, 1),
