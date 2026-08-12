@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 config_revision: 5
 
 data:
@@ -252,6 +252,7 @@ rl:
   fee: 0.0
   spread_multiplier: 1.5
   trade_asset_count: 1
+  allow_short_positions: true
 
 observability:
   experiment_name: Return Regression MLP

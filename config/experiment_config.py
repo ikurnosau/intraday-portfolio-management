@@ -74,6 +74,7 @@ class RLConfig:
     fee: float
     spread_multiplier: float
     trade_asset_count: int
+    allow_short_positions: bool
 
 
 @dataclass

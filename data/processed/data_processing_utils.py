@@ -1,6 +1,7 @@
 import sys
 import os
 import pandas as pd
+import numpy as np
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -14,6 +15,29 @@ def filter_by_regular_hours(data, datetime_column):
     return data[(data[datetime_column].dt.time >= Constants.Data.REGULAR_TRADING_HOURS_START) & \
                 (data[datetime_column].dt.time <= Constants.Data.REGULAR_TRADING_HOURS_END) & \
                 (data[datetime_column].dt.dayofweek < 5)].reset_index(drop=True)
+
+
+def print_data_statistics(
+    statistics_train: dict[str, np.ndarray],
+    statistics_val: dict[str, np.ndarray],
+    statistics_test: dict[str, np.ndarray],
+) -> None:
+    print(
+        "Test mean volatility/spread ratio:",
+        (statistics_test["volatility"] / statistics_test["spread"]).mean(),
+    )
+
+    for split_name, statistics in (
+        ("Train", statistics_train),
+        ("Validation", statistics_val),
+        ("Test", statistics_test),
+    ):
+        print(
+            f"{split_name} means:",
+            "|next return| =", np.abs(statistics["next_return"]).mean(),
+            "spread =", statistics["spread"].mean(),
+            "volatility =", statistics["volatility"].mean(),
+        )
 
 
 def convert_time_to_eastern(any_time: Any) -> Any:

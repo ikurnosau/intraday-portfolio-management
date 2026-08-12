@@ -13,8 +13,8 @@ class SignalPredictorAllocator(nn.Module):
     def __init__(
         self,
         signal_predictor: nn.Module,
+        allow_short_positions: bool,
         trade_asset_count: int = 1,
-        allow_short_positions: bool = True,
         select_from_n_best: int | None = None,
         confidence_threshold: float = 0.0,
     ):

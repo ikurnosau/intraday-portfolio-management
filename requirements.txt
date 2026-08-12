@@ -16,3 +16,4 @@ polars
 pyarrow
 pytz
 exchange-calendars
+wandb

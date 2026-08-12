@@ -62,7 +62,7 @@ allocator = SignalPredictorAllocator(
     trade_asset_count=allocator_params["trade_asset_count"],
     select_from_n_best=allocator_params["select_from_n_best"],
     confidence_threshold=allocator_params["confidence_threshold"],
-    allow_short_positions=True,
+    allow_short_positions=config.rl_config.allow_short_positions,
 ).to(device)
 
 trader = Trader(
