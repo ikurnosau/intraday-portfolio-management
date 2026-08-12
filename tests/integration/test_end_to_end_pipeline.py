@@ -85,8 +85,7 @@ test_model_config = ModelConfig(
         dropout=0.0,
         activation=torch.nn.ReLU(inplace=True),
         batch_norm=False
-    ),
-    registered_model_name="Test MLP"
+    )
 )
 
 test_train_config = TrainConfig(
@@ -206,8 +205,7 @@ def create_mlp_full_features_config():
                 dropout=0.0,
                 activation=torch.nn.ReLU(inplace=True),
                 batch_norm=False
-            ),
-            registered_model_name="Test MLP Full Features"
+            )
         ),
         train_config=TrainConfig(
             loss_fn=torch.nn.CrossEntropyLoss(),
@@ -250,8 +248,7 @@ def create_lstm_minimal_features_config():
                 num_layers=2,
                 bidirectional=True,
                 dropout=0.0
-            ),
-            registered_model_name="Test LSTM Minimal Features"
+            )
         ),
         train_config=TrainConfig(
             loss_fn=torch.nn.CrossEntropyLoss(),

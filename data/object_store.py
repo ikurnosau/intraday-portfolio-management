@@ -1,6 +1,17 @@
+from dataclasses import dataclass
+from pathlib import Path
 from typing import BinaryIO
+from urllib.parse import urlparse
 
 from config.settings import B2Settings
+
+
+@dataclass(frozen=True)
+class ObjectMetadata:
+    uri: str
+    size: int
+    etag: str | None
+    version_id: str | None
 
 
 class B2ObjectStore:
@@ -12,7 +23,12 @@ class B2ObjectStore:
         self.key_prefix = key_prefix.strip("/")
 
     @classmethod
-    def from_settings(cls, settings: B2Settings) -> "B2ObjectStore":
+    def from_settings(
+        cls,
+        settings: B2Settings,
+        *,
+        key_prefix: str | None = None,
+    ) -> "B2ObjectStore":
         import boto3
         from botocore.config import Config
 
@@ -30,12 +46,43 @@ class B2ObjectStore:
         return cls(
             client=client,
             bucket=settings.bucket_name,
-            key_prefix=settings.key_prefix,
+            key_prefix=settings.key_prefix if key_prefix is None else key_prefix,
         )
 
     def _full_key(self, key: str) -> str:
         key = key.lstrip("/")
         return f"{self.key_prefix}/{key}" if self.key_prefix else key
+
+    def uri_for_key(self, key: str) -> str:
+        return f"s3://{self.bucket}/{self._full_key(key)}"
+
+    def key_from_uri(self, uri: str) -> str:
+        parsed = urlparse(uri)
+        if parsed.scheme != "s3" or parsed.netloc != self.bucket:
+            raise ValueError(f"URI does not belong to configured object store: {uri}")
+
+        full_key = parsed.path.lstrip("/").rstrip("/")
+        if self.key_prefix:
+            prefix = f"{self.key_prefix}/"
+            if not full_key.startswith(prefix):
+                raise ValueError(
+                    f"URI is outside configured key prefix '{self.key_prefix}': {uri}"
+                )
+            return full_key[len(prefix):]
+        return full_key
+
+    def metadata(self, key: str) -> ObjectMetadata:
+        response = self.client.head_object(
+            Bucket=self.bucket,
+            Key=self._full_key(key),
+        )
+        etag = response.get("ETag")
+        return ObjectMetadata(
+            uri=self.uri_for_key(key),
+            size=int(response["ContentLength"]),
+            etag=etag.strip('"') if isinstance(etag, str) else None,
+            version_id=response.get("VersionId"),
+        )
 
     def exists(self, key: str) -> bool:
         try:
@@ -55,6 +102,10 @@ class B2ObjectStore:
             self.bucket,
             self._full_key(key),
         )
+
+    def upload_file(self, key: str, path: str | Path) -> None:
+        with Path(path).open("rb") as file_object:
+            self.upload_fileobj(key, file_object)
 
     def download_fileobj(
         self,
@@ -81,3 +132,9 @@ class B2ObjectStore:
                 file_object,
                 Callback=progress.update,
             )
+
+    def download_file(self, key: str, path: str | Path) -> None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("wb") as file_object:
+            self.download_fileobj(key, file_object)

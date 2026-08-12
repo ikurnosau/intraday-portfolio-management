@@ -60,7 +60,7 @@ from modeling.models.tsa_classifier import TemporalSpatial
 # feature, statistic, target, normalizer, model, loss, or metric changes.
 # These values are maintained manually; model artifacts should also record the
 # Git commit SHA to identify the exact source code used during training.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 CONFIG_REVISION = 5
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "train_config.yaml"
 
@@ -345,12 +345,7 @@ def load_train_config(
             "num_assets": len(symbols),
         },
     )
-    model_config = ModelConfig(
-        model=model_instance,
-        registered_model_name=str(
-            _required(model, "registered_model_name", "model")
-        ),
-    )
+    model_config = ModelConfig(model=model_instance)
 
     train = _mapping(_required(raw, "train", "config"), "train")
     optimizer = _build(

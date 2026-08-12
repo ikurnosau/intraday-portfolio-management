@@ -21,7 +21,8 @@ class Trainer:
                  early_stopping_patience: int=5,
                  device: torch.device=None,
                  metrics: dict[str, Callable]=None,
-                 save_path: str=None): 
+                 save_path: str=None,
+                 epoch_callback: Callable[[int, dict[str, float]], None] | None = None):
         self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -31,6 +32,7 @@ class Trainer:
         self.early_stopping_patience = early_stopping_patience
         self.metrics = metrics
         self.save_path = save_path
+        self.epoch_callback = epoch_callback
 
         self.device = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
         self.model.to(self.device)
@@ -111,6 +113,21 @@ class Trainer:
                 for name in self.metrics:
                     history[f"train_{name}"].append(train_metrics[name])
                     history[f"val_{name}"].append(val_metrics[name])
+
+            if self.epoch_callback is not None:
+                epoch_metrics = {
+                    "train_loss": train_loss,
+                    "val_loss": val_loss,
+                    **{
+                        f"train_{name}": value
+                        for name, value in train_metrics.items()
+                    },
+                    **{
+                        f"val_{name}": value
+                        for name, value in val_metrics.items()
+                    },
+                }
+                self.epoch_callback(epoch, epoch_metrics)
 
             # Print metrics
             logging.info(f"Train Loss: {train_loss:.4f}")

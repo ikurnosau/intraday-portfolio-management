@@ -6,3 +6,8 @@ b2:
 
 runtime:
   enable_torch_compile: false
+
+wandb:
+  project: intraday-portfolio-management
+  registry: Models
+  model_collection: portfolio-allocation-model

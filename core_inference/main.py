@@ -8,7 +8,6 @@ import torch
 from alpaca.data.live import StockDataStream
 from alpaca.data.enums import DataFeed
 
-from config.train_config import load_train_config
 from config.settings import get_settings
 from core_data_prep.core_data_prep import DataPreparer
 from core_inference.bars_response_handler import BarsResponseHandler
@@ -18,13 +17,13 @@ from core_inference.brokerage_proxies.alpaca_brokerage_proxy import AlpacaBroker
 from core_inference.brokerage_proxies.backtest_brokerage_proxy import BacktestBrokerageProxy
 from core_inference.brokerage_proxies.aggregated_brokerage_proxy import AggregatedBrokerageProxy
 from core_inference.repository import Repository
-from data.raw.retrievers.alpaca_markets_retriever import AlpacaMarketsRetriever
-from modeling.modeling_utils import load_model_and_allocator_params
-from core_inference.allocators.signal_predictor_allocator import SignalPredictorAllocator
+from observability.wandb_integration import load_production_model
 
 settings = get_settings()
-config = load_train_config()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+production_model = load_production_model(settings=settings, device=device)
+config = production_model.package.config
+allocator = production_model.package.allocator
 
 logging.basicConfig(
     level=logging.INFO,  # Set the logging level
@@ -32,6 +31,10 @@ logging.basicConfig(
     handlers=[
         logging.StreamHandler()  # Log to the console
     ]
+)
+logging.info(
+    "Loaded production model artifact: %s",
+    production_model.resolved_artifact_name,
 )
 
 
@@ -51,19 +54,6 @@ repository = Repository(
 alpaca_proxy = AlpacaBrokerageProxy(paper=True, settings=settings)
 backtest_proxy = BacktestBrokerageProxy(repository, config.rl_config.spread_multiplier)
 aggregated_proxy = AggregatedBrokerageProxy([alpaca_proxy, backtest_proxy])
-
-model, allocator_params = load_model_and_allocator_params(
-    model_path="../modeling/checkpoints/signal_predictor_with_allocator_params.pth",
-    device=device,
-    config=config
-)
-allocator = SignalPredictorAllocator(
-    signal_predictor=model,
-    trade_asset_count=allocator_params["trade_asset_count"],
-    select_from_n_best=allocator_params["select_from_n_best"],
-    confidence_threshold=allocator_params["confidence_threshold"],
-    allow_short_positions=config.rl_config.allow_short_positions,
-).to(device)
 
 trader = Trader(
     order_size_notional=10000.,

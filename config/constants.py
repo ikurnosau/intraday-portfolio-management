@@ -177,6 +177,3 @@ class Constants:
             class Alpaca:
                 BARS_STORAGE_PREFIX = 'bars'
                 BARS_WITH_QUOTES_STORAGE_PREFIX = 'bars_with_quotes'
-
-    class MLFlow: 
-        TRACKING_URI = "http://127.0.0.1:8080"

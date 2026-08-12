@@ -72,7 +72,6 @@ data:
 
 model:
   name: temporal_spatial
-  registered_model_name: TemporalSpatial Regressor
   params:
     output_dim: 1
     hidden_dim: 256

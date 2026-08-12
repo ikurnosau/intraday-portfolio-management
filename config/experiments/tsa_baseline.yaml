@@ -1,4 +1,4 @@
-schema_version: 2
+schema_version: 3
 config_revision: 5
 
 data:
@@ -203,7 +203,6 @@ data:
 
 model:
   name: temporal_spatial
-  registered_model_name: TemporalSpatial Regressor
   params:
     output_dim: 1
     hidden_dim: 128
@@ -255,4 +254,4 @@ rl:
   allow_short_positions: true
 
 observability:
-  experiment_name: Return Regression MLP
+  experiment_name: 1 min portfolio allocation

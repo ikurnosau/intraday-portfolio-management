@@ -1,7 +1,6 @@
-mlruns/
-mlartifacts/
 .idea/
 .vscode/
+.DS_Store
 __pycache__/
 .env
 data/raw/alpaca/
@@ -11,4 +10,5 @@ data/raw/stooq/
 ReportRepo/
 data/experiments_results/
 modeling/checkpoints/
+notebooks/wandb/
 .venv/

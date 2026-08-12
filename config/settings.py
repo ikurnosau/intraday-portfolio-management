@@ -34,10 +34,33 @@ class RuntimeSettings:
 
 
 @dataclass(frozen=True)
+class WandbSettings:
+    project: str
+    registry: str
+    model_collection: str
+    api_key: str
+
+    @property
+    def production_artifact_path(self) -> str:
+        return (
+            f"wandb-registry-{self.registry}/"
+            f"{self.model_collection}:production"
+        )
+
+    @property
+    def registry_collection_path(self) -> str:
+        return (
+            f"wandb-registry-{self.registry}/"
+            f"{self.model_collection}"
+        )
+
+
+@dataclass(frozen=True)
 class Settings:
     alpaca: AlpacaSettings
     b2: B2Settings
     runtime: RuntimeSettings
+    wandb: WandbSettings
 
     @classmethod
     def load(
@@ -55,9 +78,14 @@ class Settings:
         if not isinstance(raw_settings, dict):
             raise ValueError("settings.yaml must contain a YAML mapping")
 
-        _reject_unknown_keys(raw_settings, {"b2", "runtime"}, "settings")
+        _reject_unknown_keys(
+            raw_settings,
+            {"b2", "runtime", "wandb"},
+            "settings",
+        )
         b2 = _required_mapping(raw_settings, "b2")
         runtime = _required_mapping(raw_settings, "runtime")
+        wandb = _required_mapping(raw_settings, "wandb")
         _reject_unknown_keys(
             b2,
             {"endpoint_url", "region", "bucket_name", "key_prefix"},
@@ -67,6 +95,11 @@ class Settings:
             runtime,
             {"enable_torch_compile"},
             "runtime",
+        )
+        _reject_unknown_keys(
+            wandb,
+            {"project", "registry", "model_collection"},
+            "wandb",
         )
 
         secret_values = {
@@ -106,6 +139,19 @@ class Settings:
                     runtime,
                     "enable_torch_compile",
                     "runtime",
+                ),
+            ),
+            wandb=WandbSettings(
+                project=_required_string(wandb, "project", "wandb"),
+                registry=_required_string(wandb, "registry", "wandb"),
+                model_collection=_required_string(
+                    wandb,
+                    "model_collection",
+                    "wandb",
+                ),
+                api_key=_required_secret(
+                    secret_values,
+                    "WANDB_API_KEY",
                 ),
             ),
         )

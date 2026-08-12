@@ -36,7 +36,6 @@ class DataConfig:
 @dataclass
 class ModelConfig: 
     model: torch.nn.Module
-    registered_model_name: str
 
 
 @dataclass

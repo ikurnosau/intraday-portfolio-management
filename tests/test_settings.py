@@ -7,6 +7,7 @@ from config.settings import (
     B2Settings,
     RuntimeSettings,
     Settings,
+    WandbSettings,
     get_settings,
 )
 
@@ -19,6 +20,10 @@ b2:
   key_prefix: alpaca
 runtime:
   enable_torch_compile: false
+wandb:
+  project: test-project
+  registry: Models
+  model_collection: portfolio-allocation-model
 """
 
 VALID_SECRETS = """
@@ -26,6 +31,7 @@ ALPACA_PAPER_API_KEY=alpaca-key
 ALPACA_PAPER_API_SECRET=alpaca-secret
 B2_ACCESS_KEY_ID=b2-key
 B2_SECRET_ACCESS_KEY=b2-secret
+WANDB_API_KEY=wandb-key
 """
 
 
@@ -46,6 +52,10 @@ def test_load_combines_yaml_settings_and_env_secrets(tmp_path):
     assert settings.b2.bucket_name == "market-data"
     assert settings.b2.access_key_id == "b2-key"
     assert settings.runtime.enable_torch_compile is False
+    assert settings.wandb.api_key == "wandb-key"
+    assert settings.wandb.production_artifact_path == (
+        "wandb-registry-Models/portfolio-allocation-model:production"
+    )
 
 
 def test_environment_overrides_dotenv_secrets(tmp_path):
@@ -106,6 +116,12 @@ def test_get_settings_is_cached(monkeypatch):
             secret_access_key="b2-secret",
         ),
         runtime=RuntimeSettings(enable_torch_compile=False),
+        wandb=WandbSettings(
+            project="test-project",
+            registry="Models",
+            model_collection="portfolio-allocation-model",
+            api_key="wandb-key",
+        ),
     )
     monkeypatch.setattr(
         Settings,

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from data.object_store import B2ObjectStore
 from data.raw.retrievers.alpaca_markets_retriever import AlpacaMarketsRetriever
+from modeling.model_package import build_dataset_reference
 
 
 class FakeClientError(Exception):
@@ -18,7 +19,11 @@ class FakeS3Client:
     def head_object(self, Bucket, Key):
         if (Bucket, Key) not in self.objects:
             raise FakeClientError("404")
-        return {"ContentLength": len(self.objects[(Bucket, Key)])}
+        return {
+            "ContentLength": len(self.objects[(Bucket, Key)]),
+            "ETag": '"test-etag"',
+            "VersionId": "test-version",
+        }
 
     def upload_fileobj(self, file_object, bucket, key):
         self.objects[(bucket, key)] = file_object.read()
@@ -49,6 +54,13 @@ def test_b2_object_store_prefix_and_round_trip():
     assert output.getvalue() == b"payload"
     assert store.exists("bars/sample.pkl")
     assert ("market-data", "alpaca/bars/sample.pkl") in client.objects
+    assert store.uri_for_key("bars/sample.pkl") == (
+        "s3://market-data/alpaca/bars/sample.pkl"
+    )
+    assert store.key_from_uri(
+        "s3://market-data/alpaca/bars/sample.pkl"
+    ) == "bars/sample.pkl"
+    assert store.metadata("bars/sample.pkl").version_id == "test-version"
 
 
 def test_retriever_pickles_through_object_store():
@@ -64,6 +76,29 @@ def test_retriever_pickles_through_object_store():
 
     assert retriever.cache_exists("bars", "sample.pkl")
     assert retriever.load_data("bars", "sample.pkl") == payload
+
+
+def test_dataset_reference_fingerprint_is_deterministic():
+    store = B2ObjectStore(
+        FakeS3Client(),
+        bucket="market-data",
+        key_prefix="alpaca",
+    )
+    store.upload_fileobj("bars/sample.pkl", BytesIO(b"payload"))
+
+    first = build_dataset_reference(
+        store,
+        "bars/sample.pkl",
+        {"symbols": ["AAPL"], "frequency": "1Min"},
+    )
+    second = build_dataset_reference(
+        store,
+        "bars/sample.pkl",
+        {"frequency": "1Min", "symbols": ["AAPL"]},
+    )
+
+    assert first.fingerprint == second.fingerprint
+    assert first.version_id == "test-version"
 
 
 def test_quote_estimation_accepts_fixed_offset_endpoints():
