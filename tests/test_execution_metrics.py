@@ -77,10 +77,21 @@ def test_repository_snapshot_tracks_quote_timestamp_and_age():
     assert snapshot["ask_price"] == pytest.approx(100.2)
     assert snapshot["quote_timestamp"] == timestamp
     assert snapshot["quote_age_ms"] >= 0
+    assert repository.get_latest_assets_data()["TEST"]["midpoint"] == pytest.approx(
+        100.1
+    )
 
 
 def test_backtest_fill_logs_cost_and_effective_price(caplog):
     repository = _repository()
+    pre_submit_market = repository.get_latest_asset_data("TEST")
+    pre_submit_market.update(
+        {
+            "bid_price": 100.0,
+            "ask_price": 100.2,
+            "midpoint": 100.1,
+        }
+    )
     proxy = BacktestBrokerageProxy(
         repository=repository,
         spread_multiplier=1.5,
@@ -90,14 +101,88 @@ def test_backtest_fill_logs_cost_and_effective_price(caplog):
         proxy.market_shares_order(
             "TEST",
             10,
-            {"cycle_id": "cycle-1"},
+            {
+                "cycle_id": "cycle-1",
+                "pre_submit_market": pre_submit_market,
+            },
         )
 
     metric = _metric_records(caplog, "shadow_fill")[0]
     assert metric["cycle_id"] == "cycle-1"
     assert metric["modeled_transaction_cost"] == pytest.approx(1.5)
-    assert metric["effective_fill_price"] == pytest.approx(100.15)
-    assert metric["cash_delta"] == pytest.approx(-1001.5)
+    assert metric["reference_midpoint"] == pytest.approx(100.1)
+    assert metric["effective_fill_price"] == pytest.approx(100.25)
+    assert metric["cash_delta"] == pytest.approx(-1002.5)
+
+
+def test_shadow_brokers_measure_cycle_to_submit_market_move():
+    repository = _repository()
+    cycle_start_market = repository.get_latest_asset_data("TEST")
+    pre_submit_market = dict(cycle_start_market)
+    pre_submit_market.update(
+        {
+            "bid_price": 100.1,
+            "ask_price": 100.3,
+            "midpoint": 100.2,
+        }
+    )
+    context = {
+        "cycle_id": "cycle-1",
+        "cycle_start_market": cycle_start_market,
+        "pre_submit_market": pre_submit_market,
+    }
+    cycle_start_shadow = BacktestBrokerageProxy(
+        repository=repository,
+        spread_multiplier=1.5,
+        name="cycle_start_shadow",
+        market_snapshot_key="cycle_start_market",
+    )
+    pre_submit_shadow = BacktestBrokerageProxy(
+        repository=repository,
+        spread_multiplier=1.5,
+        name="pre_submit_shadow",
+        market_snapshot_key="pre_submit_market",
+    )
+
+    cycle_start_shadow.market_shares_order("TEST", 10, context)
+    pre_submit_shadow.market_shares_order("TEST", 10, context)
+
+    cycle_start_state = cycle_start_shadow.get_named_brokerage_state()[
+        "cycle_start_shadow"
+    ]
+    pre_submit_state = pre_submit_shadow.get_named_brokerage_state()[
+        "pre_submit_shadow"
+    ]
+    assert pre_submit_state.equity - cycle_start_state.equity == pytest.approx(
+        -2.0
+    )
+
+
+def test_trader_captures_market_immediately_before_broker_call():
+    recorded = {}
+    trader = Trader.__new__(Trader)
+    trader.repository = SimpleNamespace(
+        get_latest_asset_data=lambda symbol: {
+            "symbol": symbol,
+            "midpoint": 101.0,
+        }
+    )
+    trader.brokerage_proxy = SimpleNamespace(
+        market_shares_order=lambda symbol, shares, context: recorded.update(
+            {
+                "symbol": symbol,
+                "shares": shares,
+                "context": context,
+            }
+        )
+    )
+    context = {"cycle_id": "cycle-1"}
+
+    trader._execute_order("TEST", 10, context)
+
+    assert recorded["context"]["pre_submit_market"]["midpoint"] == 101.0
+    assert recorded["context"]["pre_submit_observed_at"] > 0
+    assert recorded["context"]["pre_submit_monotonic"] > 0
 
 
 def test_alpaca_fill_logs_prices_latency_and_slippage(caplog):
@@ -212,11 +297,21 @@ def test_reconciliation_separates_level_gap_from_session_pnl(caplog):
     trader = Trader.__new__(Trader)
     trader.session_start_states = {
         "alpaca_paper": BrokerageState(99_500.0, 99_500.0, {}),
-        "backtest": BrokerageState(100_000.0, 100_000.0, {}),
+        "cycle_start_shadow": BrokerageState(100_000.0, 100_000.0, {}),
+        "pre_submit_shadow": BrokerageState(100_000.0, 100_000.0, {}),
     }
     states = {
         "alpaca_paper": BrokerageState(99_490.0, 109_490.0, {"TEST": -100}),
-        "backtest": BrokerageState(99_995.0, 109_995.0, {"TEST": -100}),
+        "cycle_start_shadow": BrokerageState(
+            99_995.0,
+            109_995.0,
+            {"TEST": -100},
+        ),
+        "pre_submit_shadow": BrokerageState(
+            99_993.0,
+            109_993.0,
+            {"TEST": -100},
+        ),
     }
 
     with caplog.at_level(logging.INFO):
@@ -227,3 +322,10 @@ def test_reconciliation_separates_level_gap_from_session_pnl(caplog):
     assert comparison["raw_equity_gap_comparison_minus_primary"] == 505.0
     assert comparison["session_pnl_gap_comparison_minus_primary"] == 5.0
     assert comparison["position_differences_comparison_minus_primary"] == {}
+    latency_comparison = metric["comparisons"][2]
+    assert latency_comparison["primary"] == "cycle_start_shadow"
+    assert latency_comparison["comparison"] == "pre_submit_shadow"
+    assert (
+        latency_comparison["session_pnl_gap_comparison_minus_primary"]
+        == -2.0
+    )

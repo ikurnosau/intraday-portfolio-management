@@ -109,6 +109,13 @@ class Repository:
             })
             return latest_data
 
+    def get_latest_assets_data(self) -> dict[str, dict[str, Any]]:
+        with self._lock:
+            return {
+                symbol: self.get_latest_asset_data(symbol)
+                for symbol in self.symbols
+            }
+
     def get_bid_price(self, symbol):
         with self._lock:
             return self.bid_price[symbol]

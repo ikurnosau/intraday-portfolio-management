@@ -7,6 +7,7 @@ import logging
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from itertools import combinations
 
 from config.settings import Settings, get_settings
 from core_data_prep.core_data_prep import DataPreparer
@@ -62,6 +63,7 @@ class Trader:
         cycle_started_at = time.time()
         cycle_timer = time.perf_counter()
         logging.info("Starting trading cycle cycle_id=%s...", cycle_id)
+        cycle_start_markets = self.repository.get_latest_assets_data()
         asset_dfs = self.repository.get_asset_dfs()
 
         logging.info("Transforming data for inference...")
@@ -113,6 +115,7 @@ class Trader:
                     "decision_observed_at": decision_observed_at,
                     "decision_monotonic": decision_monotonic,
                     "decision_market": decision_market,
+                    "cycle_start_market": cycle_start_markets[symbol],
                 }
                 logging.info(
                     "execution_metric=%s",
@@ -148,7 +151,7 @@ class Trader:
             with ThreadPoolExecutor(max_workers=number_of_tasks) as executor:
                 futures = {
                     executor.submit(
-                        self.brokerage_proxy.market_shares_order,
+                        self._execute_order,
                         symbol,
                         shares,
                         order_contexts[symbol],
@@ -198,6 +201,23 @@ class Trader:
             brokerage_states=brokerage_states,
         ))
 
+    def _execute_order(
+        self,
+        symbol: str,
+        shares: float,
+        order_context: dict,
+    ) -> None:
+        order_context["pre_submit_market"] = (
+            self.repository.get_latest_asset_data(symbol)
+        )
+        order_context["pre_submit_observed_at"] = time.time()
+        order_context["pre_submit_monotonic"] = time.perf_counter()
+        self.brokerage_proxy.market_shares_order(
+            symbol,
+            shares,
+            order_context,
+        )
+
     def _log_reconciliation(self, cycle_id: str, brokerage_states: dict) -> None:
         normalized_states = {}
         for name, state in brokerage_states.items():
@@ -212,36 +232,34 @@ class Trader:
 
         comparisons = []
         names = list(brokerage_states)
-        if len(names) > 1:
-            primary_name = names[0]
+        for primary_name, comparison_name in combinations(names, 2):
             primary = normalized_states[primary_name]
-            for comparison_name in names[1:]:
-                comparison = normalized_states[comparison_name]
-                symbols = set(primary["positions"]) | set(comparison["positions"])
-                comparisons.append(
-                    {
-                        "primary": primary_name,
-                        "comparison": comparison_name,
-                        "raw_equity_gap_comparison_minus_primary": (
-                            comparison["equity"] - primary["equity"]
-                        ),
-                        "session_pnl_gap_comparison_minus_primary": (
-                            comparison["session_pnl"] - primary["session_pnl"]
-                        ),
-                        "cash_gap_comparison_minus_primary": (
-                            comparison["cash"] - primary["cash"]
-                        ),
-                        "position_differences_comparison_minus_primary": {
-                            symbol: (
-                                comparison["positions"].get(symbol, 0)
-                                - primary["positions"].get(symbol, 0)
-                            )
-                            for symbol in sorted(symbols)
-                            if comparison["positions"].get(symbol, 0)
-                            != primary["positions"].get(symbol, 0)
-                        },
-                    }
-                )
+            comparison = normalized_states[comparison_name]
+            symbols = set(primary["positions"]) | set(comparison["positions"])
+            comparisons.append(
+                {
+                    "primary": primary_name,
+                    "comparison": comparison_name,
+                    "raw_equity_gap_comparison_minus_primary": (
+                        comparison["equity"] - primary["equity"]
+                    ),
+                    "session_pnl_gap_comparison_minus_primary": (
+                        comparison["session_pnl"] - primary["session_pnl"]
+                    ),
+                    "cash_gap_comparison_minus_primary": (
+                        comparison["cash"] - primary["cash"]
+                    ),
+                    "position_differences_comparison_minus_primary": {
+                        symbol: (
+                            comparison["positions"].get(symbol, 0)
+                            - primary["positions"].get(symbol, 0)
+                        )
+                        for symbol in sorted(symbols)
+                        if comparison["positions"].get(symbol, 0)
+                        != primary["positions"].get(symbol, 0)
+                    },
+                }
+            )
 
         logging.info(
             "execution_metric=%s",

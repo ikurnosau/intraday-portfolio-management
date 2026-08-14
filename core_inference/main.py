@@ -56,12 +56,24 @@ alpaca_proxy = AlpacaBrokerageProxy(
     settings=settings,
     repository=repository,
 )
-backtest_proxy = BacktestBrokerageProxy(
+initial_cash = alpaca_proxy.get_cash_balance()
+cycle_start_shadow = BacktestBrokerageProxy(
     repository,
     config.rl_config.spread_multiplier,
-    cash_balance=alpaca_proxy.get_cash_balance(),
+    cash_balance=initial_cash,
+    name="cycle_start_shadow",
+    market_snapshot_key="cycle_start_market",
 )
-aggregated_proxy = AggregatedBrokerageProxy([alpaca_proxy, backtest_proxy])
+pre_submit_shadow = BacktestBrokerageProxy(
+    repository,
+    config.rl_config.spread_multiplier,
+    cash_balance=initial_cash,
+    name="pre_submit_shadow",
+    market_snapshot_key="pre_submit_market",
+)
+aggregated_proxy = AggregatedBrokerageProxy(
+    [alpaca_proxy, cycle_start_shadow, pre_submit_shadow]
+)
 
 trader = Trader(
     order_size_notional=10000.,

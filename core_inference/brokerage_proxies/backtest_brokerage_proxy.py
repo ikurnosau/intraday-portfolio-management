@@ -8,21 +8,31 @@ from core_inference.models.brokerage_state import BrokerageState
 
 
 class BacktestBrokerageProxy(BaseBrokerageProxy):
-    def __init__(self, repository: Repository, spread_multiplier: float, cash_balance: float = 100000): 
+    def __init__(
+        self,
+        repository: Repository,
+        spread_multiplier: float,
+        cash_balance: float = 100000,
+        name: str = "backtest",
+        market_snapshot_key: str = "pre_submit_market",
+    ):
         self.repository = repository
         self.spread_multiplier = spread_multiplier
         self.cash_balance = cash_balance
-        
+        self.name = name
+        self.market_snapshot_key = market_snapshot_key
+
         self.shares_hold = {symbol: 0.0 for symbol in self.repository.symbols}
 
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     def get_equity(self) -> float:
         with self._lock:
             cash = self.cash_balance
             shares_hold = dict(self.shares_hold)
         return cash + sum(
-            shares * self.repository.get_latest_asset_data(symbol)["close"]
+            shares
+            * self.repository.get_latest_asset_data(symbol)["midpoint"]
             for symbol, shares in shares_hold.items()
         )
 
@@ -36,9 +46,14 @@ class BacktestBrokerageProxy(BaseBrokerageProxy):
         shares: float,
         order_context: dict | None = None,
     ) -> None:
-        asset_data = self.repository.get_latest_asset_data(symbol)
-        cost = self._transaction_cost(shares, asset_data)
-        reference_price = float(asset_data["close"])
+        market = self._execution_market(symbol, order_context)
+        snapshot_key_used = (
+            self.market_snapshot_key
+            if order_context is not None
+            else "current_market_fallback"
+        )
+        cost = self._transaction_cost(shares, market)
+        reference_price = float(market["midpoint"])
         effective_fill_price = reference_price + cost / shares
 
         with self._lock:
@@ -53,19 +68,17 @@ class BacktestBrokerageProxy(BaseBrokerageProxy):
                 {
                     "event": "shadow_fill",
                     "cycle_id": (order_context or {}).get("cycle_id"),
-                    "broker": "backtest",
+                    "broker": self.name,
+                    "market_snapshot_key": snapshot_key_used,
                     "symbol": symbol,
                     "side": "buy" if shares > 0 else "sell",
                     "quantity": abs(float(shares)),
-                    "reference_close": reference_price,
-                    "bar_timestamp": asset_data.get("date"),
-                    "modeled_bid": float(asset_data["bid_price"]),
-                    "modeled_ask": float(asset_data["ask_price"]),
-                    "modeled_midpoint": (
-                        float(asset_data["bid_price"])
-                        + float(asset_data["ask_price"])
-                    ) / 2,
-                    "execution_market": asset_data,
+                    "reference_midpoint": reference_price,
+                    "bar_timestamp": market.get("date"),
+                    "modeled_bid": float(market["bid_price"]),
+                    "modeled_ask": float(market["ask_price"]),
+                    "modeled_midpoint": float(market["midpoint"]),
+                    "execution_market": market,
                     "spread_multiplier": self.spread_multiplier,
                     "modeled_transaction_cost": cost,
                     "effective_fill_price": effective_fill_price,
@@ -93,12 +106,27 @@ class BacktestBrokerageProxy(BaseBrokerageProxy):
     ) -> float:
         return self.spread_multiplier * (asset_data['ask_price'] - asset_data['bid_price']) * abs(shares) / 2
 
+    def _execution_market(
+        self,
+        symbol: str,
+        order_context: dict | None,
+    ) -> dict[str, Any]:
+        if order_context is None:
+            return self.repository.get_latest_asset_data(symbol)
+        try:
+            return order_context[self.market_snapshot_key]
+        except KeyError as exc:
+            raise ValueError(
+                f"Missing {self.market_snapshot_key!r} market snapshot "
+                f"for {self.name!r}"
+            ) from exc
+
     def get_named_brokerage_state(self) -> dict[str: BrokerageState]:
         with self._lock:
             cash = self.cash_balance
             shares_hold = self.get_all_positions()
         return {
-            "backtest": BrokerageState(
+            self.name: BrokerageState(
                 equity=self.get_equity(),
                 cash_balance=cash,
                 shares_hold=shares_hold,

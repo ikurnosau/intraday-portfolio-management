@@ -122,9 +122,10 @@ def run_streaming_validation(
             bars_and_quotes=cur_day_initialization,
         )
         backtest_proxy = BacktestBrokerageProxy(
-            repository,
-            config.rl_config.spread_multiplier,
-            cur_cash,
+            repository=repository,
+            spread_multiplier=config.rl_config.spread_multiplier,
+            cash_balance=cur_cash,
+            market_snapshot_key="pre_submit_market",
         )
         trader = Trader(
             order_size_notional=order_size_notional,
