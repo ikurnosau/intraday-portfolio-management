@@ -7,9 +7,18 @@ class BaseBrokerageProxy(ABC):
     @abstractmethod
     def get_equity(self) -> float:
         raise NotImplementedError("Subclasses must implement this method")
+
+    @abstractmethod
+    def get_cash_balance(self) -> float:
+        raise NotImplementedError("Subclasses must implement this method")
         
     @abstractmethod
-    def market_shares_order(self, symbol: str, shares: float) -> None:
+    def market_shares_order(
+        self,
+        symbol: str,
+        shares: float,
+        order_context: dict | None = None,
+    ) -> None:
         raise NotImplementedError("Subclasses must implement this method")
 
     @abstractmethod

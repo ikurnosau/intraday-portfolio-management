@@ -1,0 +1,174 @@
+import json
+import logging
+from types import SimpleNamespace
+
+import pandas as pd
+import pytest
+from alpaca.trading.enums import OrderStatus
+
+from core_inference.brokerage_proxies.alpaca_brokerage_proxy import (
+    AlpacaBrokerageProxy,
+)
+from core_inference.brokerage_proxies.backtest_brokerage_proxy import (
+    BacktestBrokerageProxy,
+)
+from core_inference.models.brokerage_state import BrokerageState
+from core_inference.repository import Repository
+from core_inference.trader import Trader
+
+
+def _repository() -> Repository:
+    frame = pd.DataFrame(
+        [
+            {
+                "open": 99.5,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.0,
+                "volume": 1000,
+                "date": pd.Timestamp("2026-08-14 15:16:00", tz="UTC"),
+                "bid_price": 99.9,
+                "ask_price": 100.1,
+                "bid_size": 10,
+                "ask_size": 12,
+            }
+        ]
+    )
+    return Repository(
+        trading_symbols=["TEST"],
+        required_history_depth=1,
+        bars_and_quotes={"TEST": frame},
+    )
+
+
+def _metric_records(caplog, event: str) -> list[dict]:
+    prefix = "execution_metric="
+    return [
+        json.loads(record.message[len(prefix):])
+        for record in caplog.records
+        if record.message.startswith(prefix)
+        and json.loads(record.message[len(prefix):])["event"] == event
+    ]
+
+
+def test_repository_snapshot_tracks_quote_timestamp_and_age():
+    repository = _repository()
+    timestamp = pd.Timestamp("2026-08-14 15:16:01", tz="UTC")
+
+    repository.update_quote(
+        SimpleNamespace(
+            symbol="TEST",
+            bid_price=100.0,
+            ask_price=100.2,
+            bid_size=15,
+            ask_size=20,
+            timestamp=timestamp,
+        )
+    )
+
+    snapshot = repository.get_latest_asset_data("TEST")
+
+    assert snapshot["midpoint"] == pytest.approx(100.1)
+    assert snapshot["bid_price"] == pytest.approx(100.0)
+    assert snapshot["ask_price"] == pytest.approx(100.2)
+    assert snapshot["quote_timestamp"] == timestamp
+    assert snapshot["quote_age_ms"] >= 0
+
+
+def test_backtest_fill_logs_cost_and_effective_price(caplog):
+    repository = _repository()
+    proxy = BacktestBrokerageProxy(
+        repository=repository,
+        spread_multiplier=1.5,
+    )
+
+    with caplog.at_level(logging.INFO):
+        proxy.market_shares_order(
+            "TEST",
+            10,
+            {"cycle_id": "cycle-1"},
+        )
+
+    metric = _metric_records(caplog, "shadow_fill")[0]
+    assert metric["cycle_id"] == "cycle-1"
+    assert metric["modeled_transaction_cost"] == pytest.approx(1.5)
+    assert metric["effective_fill_price"] == pytest.approx(100.15)
+    assert metric["cash_delta"] == pytest.approx(-1001.5)
+
+
+def test_alpaca_fill_logs_prices_latency_and_slippage(caplog):
+    repository = _repository()
+    submitted_order = SimpleNamespace(id="order-1", client_order_id="client-1")
+    filled_order = SimpleNamespace(
+        id="order-1",
+        status=OrderStatus.FILLED,
+        filled_qty="10",
+        filled_avg_price="100.12",
+        created_at=None,
+        submitted_at=None,
+        filled_at=None,
+    )
+    proxy = AlpacaBrokerageProxy.__new__(AlpacaBrokerageProxy)
+    proxy.paper = True
+    proxy.repository = repository
+    proxy.trading_client = SimpleNamespace(
+        submit_order=lambda order_data: submitted_order,
+        get_order_by_id=lambda order_id: filled_order,
+    )
+
+    with caplog.at_level(logging.INFO):
+        proxy.market_shares_order(
+            "TEST",
+            10,
+            {
+                "cycle_id": "cycle-1",
+                "decision_observed_at": 1.0,
+                "decision_market": repository.get_latest_asset_data("TEST"),
+            },
+        )
+
+    metric = _metric_records(caplog, "live_fill")[0]
+    assert metric["cycle_id"] == "cycle-1"
+    assert metric["filled_avg_price"] == pytest.approx(100.12)
+    assert metric["slippage_vs_submit_midpoint_per_share"] == pytest.approx(0.12)
+    assert metric["slippage_vs_submit_touch_per_share"] == pytest.approx(0.02)
+    assert metric["total_midpoint_slippage"] == pytest.approx(1.2)
+    assert metric["submit_api_latency_ms"] >= 0
+    assert metric["submit_to_fill_observed_ms"] >= 0
+
+
+def test_alpaca_close_all_positions_waits_for_each_fill():
+    proxy = AlpacaBrokerageProxy.__new__(AlpacaBrokerageProxy)
+    proxy.trading_client = SimpleNamespace(
+        close_all_positions=lambda: [
+            SimpleNamespace(body=SimpleNamespace(id="order-1")),
+            SimpleNamespace(body=SimpleNamespace(id="order-2")),
+        ]
+    )
+    waited_for = []
+    proxy._wait_for_fill = waited_for.append
+
+    proxy.close_all_positions()
+
+    assert waited_for == ["order-1", "order-2"]
+
+
+def test_reconciliation_separates_level_gap_from_session_pnl(caplog):
+    trader = Trader.__new__(Trader)
+    trader.session_start_states = {
+        "alpaca_paper": BrokerageState(99_500.0, 99_500.0, {}),
+        "backtest": BrokerageState(100_000.0, 100_000.0, {}),
+    }
+    states = {
+        "alpaca_paper": BrokerageState(99_490.0, 109_490.0, {"TEST": -100}),
+        "backtest": BrokerageState(99_995.0, 109_995.0, {"TEST": -100}),
+    }
+
+    with caplog.at_level(logging.INFO):
+        trader._log_reconciliation("cycle-1", states)
+
+    metric = _metric_records(caplog, "brokerage_reconciliation")[0]
+    comparison = metric["comparisons"][0]
+    assert comparison["raw_equity_gap_comparison_minus_primary"] == 505.0
+    assert comparison["session_pnl_gap_comparison_minus_primary"] == 5.0
+    assert comparison["position_differences_comparison_minus_primary"] == {}

@@ -15,9 +15,17 @@ class AggregatedBrokerageProxy(BaseBrokerageProxy):
     def get_equity(self) -> float:
         return self.brokerage_proxies[0].get_equity()
 
-    def market_shares_order(self, symbol: str, shares: float) -> None:
+    def get_cash_balance(self) -> float:
+        return self.brokerage_proxies[0].get_cash_balance()
+
+    def market_shares_order(
+        self,
+        symbol: str,
+        shares: float,
+        order_context: dict | None = None,
+    ) -> None:
         for proxy in self.brokerage_proxies:
-            proxy.market_shares_order(symbol, shares)
+            proxy.market_shares_order(symbol, shares, order_context)
 
     def close_all_positions(self) -> None:
         for proxy in self.brokerage_proxies:

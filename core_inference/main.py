@@ -51,8 +51,16 @@ repository = Repository(
     retriever=config.data_config.retriever,
 )
 
-alpaca_proxy = AlpacaBrokerageProxy(paper=True, settings=settings)
-backtest_proxy = BacktestBrokerageProxy(repository, config.rl_config.spread_multiplier)
+alpaca_proxy = AlpacaBrokerageProxy(
+    paper=True,
+    settings=settings,
+    repository=repository,
+)
+backtest_proxy = BacktestBrokerageProxy(
+    repository,
+    config.rl_config.spread_multiplier,
+    cash_balance=alpaca_proxy.get_cash_balance(),
+)
 aggregated_proxy = AggregatedBrokerageProxy([alpaca_proxy, backtest_proxy])
 
 trader = Trader(
