@@ -1,5 +1,7 @@
+import asyncio
 import json
 import logging
+import time
 from types import SimpleNamespace
 
 import pandas as pd
@@ -12,7 +14,9 @@ from core_inference.brokerage_proxies.alpaca_brokerage_proxy import (
 from core_inference.brokerage_proxies.backtest_brokerage_proxy import (
     BacktestBrokerageProxy,
 )
+from core_inference.bars_response_handler import BarsResponseHandler
 from core_inference.models.brokerage_state import BrokerageState
+from core_inference.quotes_response_handler import QuotesResponseHandler
 from core_inference.repository import Repository
 from core_inference.trader import Trader
 
@@ -151,6 +155,57 @@ def test_alpaca_close_all_positions_waits_for_each_fill():
     proxy.close_all_positions()
 
     assert waited_for == ["order-1", "order-2"]
+
+
+def test_trading_cycle_does_not_block_quote_callbacks():
+    class SlowTrader:
+        def perform_trading_cycle(self):
+            time.sleep(0.1)
+
+    class QuoteRepository:
+        def __init__(self):
+            self.quote_updates = 0
+
+        def update_quote(self, data):
+            self.quote_updates += 1
+
+    async def run_scenario():
+        repository = QuoteRepository()
+        bars_handler = BarsResponseHandler(SlowTrader(), repository)
+        quotes_handler = QuotesResponseHandler(repository)
+
+        cycle = asyncio.create_task(bars_handler._trigger_trading_cycle())
+        await asyncio.sleep(0.01)
+        await quotes_handler.handle(SimpleNamespace())
+
+        assert repository.quote_updates == 1
+        assert not cycle.done()
+        await cycle
+
+    asyncio.run(run_scenario())
+
+
+def test_overlapping_trigger_is_coalesced_into_one_follow_up_cycle():
+    class CountingTrader:
+        def __init__(self):
+            self.calls = 0
+
+        def perform_trading_cycle(self):
+            self.calls += 1
+            time.sleep(0.05)
+
+    async def run_scenario():
+        trader = CountingTrader()
+        handler = BarsResponseHandler(trader, SimpleNamespace())
+
+        first_cycle = asyncio.create_task(handler._trigger_trading_cycle())
+        await asyncio.sleep(0.01)
+        await handler._trigger_trading_cycle()
+        await first_cycle
+
+        assert trader.calls == 2
+
+    asyncio.run(run_scenario())
 
 
 def test_reconciliation_separates_level_gap_from_session_pnl(caplog):

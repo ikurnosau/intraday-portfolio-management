@@ -16,6 +16,8 @@ class BarsResponseHandler:
 
         self.debounce_timer = None
         self._updated_symbols: set[str] = set()
+        self._cycle_lock = asyncio.Lock()
+        self._cycle_pending = False
 
     async def handle(self, data):
         if self.debounce_timer:
@@ -57,5 +59,17 @@ class BarsResponseHandler:
 
     async def _trigger_trading_cycle(self):
         self.debounce_timer = None
-        self._updated_symbols.clear()
-        self.trader.perform_trading_cycle()
+        if self._cycle_lock.locked():
+            self._cycle_pending = True
+            logging.info(
+                "Trading cycle already running; queued one follow-up cycle."
+            )
+            return
+
+        async with self._cycle_lock:
+            while True:
+                self._updated_symbols.clear()
+                self._cycle_pending = False
+                await asyncio.to_thread(self.trader.perform_trading_cycle)
+                if not self._cycle_pending:
+                    break

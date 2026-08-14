@@ -33,7 +33,6 @@ class Trader:
         self.repository = repository
 
         self.brokerage_proxy = brokerage_proxy
-        self.brokerage_proxy.close_all_positions()
 
         self.portfolio_allocator = portfolio_allocator
         # torch.compile is optional; disable by default to avoid Triton dependency in inference
