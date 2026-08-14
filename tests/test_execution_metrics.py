@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 import json
 import logging
 import time
@@ -266,6 +267,50 @@ def test_trading_cycle_does_not_block_quote_callbacks():
         assert repository.quote_updates == 1
         assert not cycle.done()
         await cycle
+
+    asyncio.run(run_scenario())
+
+
+def test_immediate_bar_trigger_returns_before_trading_cycle_finishes():
+    class SlowTrader:
+        def perform_trading_cycle(self):
+            time.sleep(0.1)
+
+    class StreamRepository:
+        def __init__(self):
+            self.quote_updates = 0
+
+        def add_bar(self, data):
+            pass
+
+        def get_symbols(self):
+            return ["TEST"]
+
+        def update_quote(self, data):
+            self.quote_updates += 1
+
+    async def run_scenario():
+        repository = StreamRepository()
+        bars_handler = BarsResponseHandler(SlowTrader(), repository)
+        quotes_handler = QuotesResponseHandler(repository)
+        bar = SimpleNamespace(
+            symbol="TEST",
+            open=100.0,
+            high=101.0,
+            low=99.0,
+            close=100.5,
+            volume=1000,
+            timestamp=datetime.now(timezone.utc),
+        )
+
+        await bars_handler.handle(bar)
+        assert bars_handler._cycle_task is not None
+        assert not bars_handler._cycle_task.done()
+
+        await quotes_handler.handle(SimpleNamespace())
+        assert repository.quote_updates == 1
+
+        await asyncio.gather(*list(bars_handler._background_tasks))
 
     asyncio.run(run_scenario())
 

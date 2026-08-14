@@ -18,6 +18,8 @@ class BarsResponseHandler:
         self._updated_symbols: set[str] = set()
         self._cycle_lock = asyncio.Lock()
         self._cycle_pending = False
+        self._cycle_task: asyncio.Task | None = None
+        self._background_tasks: set[asyncio.Task] = set()
 
     async def handle(self, data):
         if self.debounce_timer:
@@ -33,7 +35,7 @@ class BarsResponseHandler:
         # If all symbols updated since last cycle, trigger immediately.
         if self._updated_symbols.issuperset(self.repository.get_symbols()):
             logging.info("All symbols updated since last cycle, triggering trading cycle immediately.")
-            await self._trigger_trading_cycle()
+            self._schedule_trading_cycle()
         else:
             # Schedule a fresh debounce callback (new "last event" timer)
             self.debounce_timer = asyncio.create_task(self.identify_last_event())
@@ -53,9 +55,35 @@ class BarsResponseHandler:
     async def identify_last_event(self):
         try:
             await asyncio.sleep(self.DEBOUNCE_DELAY)
-            await self._trigger_trading_cycle()
+            self._schedule_trading_cycle()
         except asyncio.CancelledError:
             pass
+
+    def _schedule_trading_cycle(self) -> None:
+        self.debounce_timer = None
+        self._updated_symbols.clear()
+        if self._cycle_task is not None and not self._cycle_task.done():
+            self._cycle_pending = True
+            logging.info(
+                "Trading cycle already running; queued one follow-up cycle."
+            )
+            return
+
+        task = asyncio.create_task(self._trigger_trading_cycle())
+        self._cycle_task = task
+        self._background_tasks.add(task)
+        task.add_done_callback(self._on_trading_cycle_done)
+
+    def _on_trading_cycle_done(self, task: asyncio.Task) -> None:
+        self._background_tasks.discard(task)
+        if self._cycle_task is task:
+            self._cycle_task = None
+        if task.cancelled():
+            return
+        try:
+            task.result()
+        except Exception:
+            logging.exception("Background trading cycle failed")
 
     async def _trigger_trading_cycle(self):
         self.debounce_timer = None
@@ -68,7 +96,6 @@ class BarsResponseHandler:
 
         async with self._cycle_lock:
             while True:
-                self._updated_symbols.clear()
                 self._cycle_pending = False
                 await asyncio.to_thread(self.trader.perform_trading_cycle)
                 if not self._cycle_pending:
