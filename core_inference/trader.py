@@ -2,9 +2,8 @@ import torch
 import torch.nn as nn
 import pandas as pd
 from typing import Callable
-import math
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from config.settings import Settings, get_settings
 from core_data_prep.core_data_prep import DataPreparer
@@ -82,37 +81,42 @@ class Trader:
         new_allocation_log = {symbol: new_allocation[symbol] for symbol in new_allocation if new_allocation[symbol] != 0}
         logging.info(f"New allocation predicted: {new_allocation_log}")
 
-        cur_state = self.states_history[-1]
-        cur_allocation = cur_state.allocation
-
-        enter_orders = {}
-        exit_orders = {}
+        current_positions = self.brokerage_proxy.get_all_positions()
+        orders = {}
         for symbol in self.repository.get_symbols():
-            if cur_allocation[symbol] * new_allocation[symbol] > 0: 
-                abs_difference = abs(new_allocation[symbol]) - abs(cur_allocation[symbol])
-                difference = new_allocation[symbol] - cur_allocation[symbol]
-                if abs_difference > 0:
-                    cash_to_allocate = difference * self.order_size_notional
-                    enter_orders[symbol] =  cash_to_allocate // self.repository.get_latest_asset_data(symbol)['close']
-                elif abs_difference < 0:
-                    proportion_to_liquidate = difference / abs(cur_allocation[symbol])
-                    exit_orders[symbol] = round(cur_state.shares_hold[symbol] * proportion_to_liquidate)
-            else: 
-                if new_allocation[symbol] != 0:
-                    cash_to_allocate = new_allocation[symbol] * self.order_size_notional
-                    enter_orders[symbol] = cash_to_allocate // self.repository.get_latest_asset_data(symbol)['close']
-                if cur_allocation[symbol] != 0:
-                    exit_orders[symbol] = - cur_state.shares_hold[symbol]
+            latest_close = self.repository.get_latest_asset_data(symbol)["close"]
+            target_notional = new_allocation[symbol] * self.order_size_notional
+            target_shares = target_notional // latest_close
+            current_shares = current_positions.get(symbol, 0)
+            shares_delta = target_shares - current_shares
+            if shares_delta != 0:
+                orders[symbol] = shares_delta
 
-        logging.info(f"Enter orders: {enter_orders}")
-        logging.info(f"Exit orders: {exit_orders}")
+        logging.info("Orders: %s", orders)
 
-        number_of_tasks = len(enter_orders) + len(exit_orders)
+        number_of_tasks = len(orders)
         if number_of_tasks > 0:
             logging.info("Starting order execution...")
             with ThreadPoolExecutor(max_workers=number_of_tasks) as executor:
-                exit_orders = [executor.submit(self.brokerage_proxy.market_shares_order, symbol, shares) for symbol, shares in exit_orders.items()]
-                enter_orders = [executor.submit(self.brokerage_proxy.market_shares_order, symbol, shares) for symbol, shares in enter_orders.items()]
+                futures = {
+                    executor.submit(
+                        self.brokerage_proxy.market_shares_order,
+                        symbol,
+                        shares,
+                    ): (symbol, shares)
+                    for symbol, shares in orders.items()
+                }
+                for future in as_completed(futures):
+                    symbol, shares = futures[future]
+                    try:
+                        future.result()
+                    except Exception:
+                        logging.exception(
+                            "Order failed for %s with shares %s",
+                            symbol,
+                            shares,
+                        )
+                        raise
         else:
             logging.info("No orders to execute")
 
