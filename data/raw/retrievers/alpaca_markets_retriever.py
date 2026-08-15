@@ -7,12 +7,13 @@ from alpaca.data.requests import StockBarsRequest, StockQuotesRequest, StockLate
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pickle 
 import numpy as np
 import logging
+import os
 from requests.exceptions import ConnectionError as RequestsConnectionError
 from requests.exceptions import Timeout as RequestsTimeout
 import tempfile
@@ -149,10 +150,11 @@ class _QuotePullMetrics:
         self._last_report_quotes = self._quotes
         self._latencies.clear()
         return (
-            "Alpaca quote pull: pages=%s rpm=%.0f quotes/s=%.0f "
+            "Alpaca quote pull: pid=%s pages=%s rpm=%.0f quotes/s=%.0f "
             "active=%s latency_p50=%.2fs latency_p95=%.2fs "
             "429=%s 504=%s connection_errors=%s"
             % (
+                os.getpid(),
                 self._pages,
                 rpm,
                 quotes_per_second,
@@ -166,6 +168,25 @@ class _QuotePullMetrics:
         )
 
 
+def _retrieve_exact_quote_batch(
+    sessions: list[tuple],
+    worker_count: int,
+    requests_per_minute: int,
+) -> list[tuple]:
+    """Run one process-local pool of independent symbol sessions."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+    )
+    retriever = AlpacaMarketsRetriever(
+        use_quote_estimation=False,
+        exact_quote_workers=worker_count,
+        exact_quote_processes=1,
+        quote_requests_per_minute=requests_per_minute,
+    )
+    return retriever._retrieve_exact_quote_sessions(sessions)
+
+
 class AlpacaMarketsRetriever:
     FEED = 'sip'
     QUOTE_FIELDS = ("ap", "as", "bp", "bs")
@@ -177,15 +198,20 @@ class AlpacaMarketsRetriever:
         timeframe: TimeFrame = TimeFrame.Minute,
         use_quote_estimation: bool = True,
         exact_quote_workers: int = 16,
+        exact_quote_processes: int = 1,
         quote_requests_per_minute: int = 9_000,
         object_store: B2ObjectStore | None = None,
         settings: Settings | None = None,
     ):
         if exact_quote_workers <= 0:
             raise ValueError("exact_quote_workers must be positive")
+        if exact_quote_processes <= 0:
+            raise ValueError("exact_quote_processes must be positive")
         self.timeframe = timeframe
         self.use_quote_estimation = use_quote_estimation
         self.exact_quote_workers = exact_quote_workers
+        self.exact_quote_processes = exact_quote_processes
+        self.quote_requests_per_minute = quote_requests_per_minute
         self._client: StockHistoricalDataClient | None = None
         self._exact_quote_clients = threading.local()
         self._quote_request_limiter = _RequestRateLimiter(
@@ -596,11 +622,46 @@ class AlpacaMarketsRetriever:
     ) -> pd.DataFrame:
         return self._add_exact_quotes_to_bars({symbol: bar_df})[symbol]
 
+    def _retrieve_exact_quote_sessions(
+        self,
+        sessions: list[tuple],
+    ) -> list[tuple]:
+        self._quote_pull_metrics.reset()
+        session_results = []
+        max_workers = min(self.exact_quote_workers, len(sessions))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(
+                    self._exact_quotes_for_session,
+                    symbol,
+                    session_start,
+                    bar_ends,
+                ): (symbol, positions)
+                for symbol, positions, session_start, bar_ends in sessions
+            }
+            for future in as_completed(futures):
+                symbol, positions = futures[future]
+                try:
+                    quote_values, timestamps_ns, page_count = future.result()
+                except Exception:
+                    self._quote_pull_metrics.log_summary()
+                    raise
+                session_results.append(
+                    (
+                        symbol,
+                        positions,
+                        quote_values,
+                        timestamps_ns,
+                        page_count,
+                    )
+                )
+        self._quote_pull_metrics.log_summary()
+        return session_results
+
     def _add_exact_quotes_to_bars(
         self,
         bars: dict[str, pd.DataFrame],
     ) -> dict[str, pd.DataFrame]:
-        self._quote_pull_metrics.reset()
         results = {
             symbol: bar_df.assign(
                 **{
@@ -648,41 +709,61 @@ class AlpacaMarketsRetriever:
             return results
 
         page_counts = {symbol: 0 for symbol in bars}
-        max_workers = min(self.exact_quote_workers, len(sessions))
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(
-                    self._exact_quotes_for_session,
-                    symbol,
-                    session_start,
-                    bar_ends,
-                ): (symbol, positions)
-                for symbol, positions, session_start, bar_ends in sessions
-            }
-            for future in as_completed(futures):
-                symbol, positions = futures[future]
-                try:
-                    (
-                        quote_values,
-                        session_quote_timestamp_ns,
-                        page_count,
-                    ) = future.result()
-                except Exception:
-                    self._quote_pull_metrics.log_summary()
-                    raise
-                page_counts[symbol] += page_count
-                results[symbol].iloc[
-                    positions,
-                    [
-                        results[symbol].columns.get_loc(column)
-                        for column in self.QUOTE_COLUMNS
-                    ],
-                ] = quote_values
-                quote_timestamp_ns[symbol][positions] = (
-                    session_quote_timestamp_ns
-                )
+        process_count = min(
+            self.exact_quote_processes,
+            self.exact_quote_workers,
+            self.quote_requests_per_minute,
+            len(sessions),
+        )
+        if process_count == 1:
+            session_results = self._retrieve_exact_quote_sessions(sessions)
+        else:
+            batches = [
+                sessions[index::process_count]
+                for index in range(process_count)
+            ]
+            workers_per_process = max(
+                1,
+                self.exact_quote_workers // process_count,
+            )
+            extra_workers = self.exact_quote_workers % process_count
+            rpm_per_process = max(
+                1,
+                self.quote_requests_per_minute // process_count,
+            )
+            extra_rpm = self.quote_requests_per_minute % process_count
+            session_results = []
+            with ProcessPoolExecutor(max_workers=process_count) as executor:
+                futures = [
+                    executor.submit(
+                        _retrieve_exact_quote_batch,
+                        batch,
+                        workers_per_process + (index < extra_workers),
+                        rpm_per_process + (index < extra_rpm),
+                    )
+                    for index, batch in enumerate(batches)
+                ]
+                for future in as_completed(futures):
+                    session_results.extend(future.result())
 
-        self._quote_pull_metrics.log_summary()
+        for (
+            symbol,
+            positions,
+            quote_values,
+            session_quote_timestamp_ns,
+            page_count,
+        ) in session_results:
+            page_counts[symbol] += page_count
+            results[symbol].iloc[
+                positions,
+                [
+                    results[symbol].columns.get_loc(column)
+                    for column in self.QUOTE_COLUMNS
+                ],
+            ] = quote_values
+            quote_timestamp_ns[symbol][positions] = (
+                session_quote_timestamp_ns
+            )
         for symbol, result in results.items():
             result["quote_timestamp"] = pd.Series(
                 pd.to_datetime(

@@ -1,5 +1,5 @@
-schema_version: 5
-config_revision: 13
+schema_version: 6
+config_revision: 14
 
 data:
   retriever:
@@ -7,6 +7,7 @@ data:
     params:
       use_quote_estimation: false
       exact_quote_workers: 300
+      exact_quote_processes: 8
       quote_requests_per_minute: 9000
   symbols:
     - AAPL
