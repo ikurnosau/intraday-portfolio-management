@@ -1,9 +1,13 @@
-schema_version: 3
-config_revision: 5
+schema_version: 5
+config_revision: 13
 
 data:
   retriever:
     name: alpaca_markets
+    params:
+      use_quote_estimation: false
+      exact_quote_workers: 300
+      quote_requests_per_minute: 9000
   symbols:
     - AAPL
     - ACWI
@@ -235,7 +239,7 @@ train:
       name: rmse_regression
   num_epochs: 20
   early_stopping_patience: 10
-  device: cuda
+  device: cpu
   cudnn_benchmark: true
   batch_size: 128
   shuffle: true

@@ -4,14 +4,20 @@ from alpaca.trading.enums import AssetClass, AssetStatus
 
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest, StockQuotesRequest, StockLatestQuoteRequest
-from alpaca.data.timeframe import TimeFrame
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pickle 
 import numpy as np
 import logging
+from requests.exceptions import ConnectionError as RequestsConnectionError
+from requests.exceptions import Timeout as RequestsTimeout
 import tempfile
+import threading
+import time
 
 from config.constants import Constants
 from config.settings import Settings, get_settings
@@ -29,17 +35,163 @@ class _NumpyCoreRedirectingUnpickler(pickle.Unpickler):
         return super().find_class(module, name)
     
 
+class _RequestRateLimiter:
+    """Smooth request starts across threads to stay below an RPM limit."""
+
+    def __init__(self, requests_per_minute: int):
+        if requests_per_minute <= 0:
+            raise ValueError("quote_requests_per_minute must be positive")
+        self._interval = 60.0 / requests_per_minute
+        self._next_request_at = 0.0
+        self._lock = threading.Lock()
+
+    def acquire(self) -> None:
+        with self._lock:
+            now = time.monotonic()
+            request_at = max(now, self._next_request_at)
+            self._next_request_at = request_at + self._interval
+        delay = request_at - now
+        if delay > 0:
+            time.sleep(delay)
+
+
+class _QuotePullMetrics:
+    """Collect and periodically log concurrent quote-request metrics."""
+
+    def __init__(self, report_interval_seconds: float = 10.0):
+        self._report_interval_seconds = report_interval_seconds
+        self._lock = threading.Lock()
+        self.reset()
+
+    def reset(self) -> None:
+        with self._lock:
+            now = time.monotonic()
+            self._started_at = now
+            self._last_report_at = now
+            self._last_report_attempts = 0
+            self._last_report_quotes = 0
+            self._attempts = 0
+            self._pages = 0
+            self._quotes = 0
+            self._active = 0
+            self._connection_errors = 0
+            self._status_counts: dict[int, int] = defaultdict(int)
+            self._latencies: list[float] = []
+
+    def response_hook(self, response, *args, **kwargs):
+        report = None
+        with self._lock:
+            self._attempts += 1
+            self._status_counts[response.status_code] += 1
+            if 200 <= response.status_code < 300:
+                self._pages += 1
+            self._latencies.append(response.elapsed.total_seconds())
+            report = self._report_if_due_locked(time.monotonic())
+        if report is not None:
+            logging.info(report)
+        return response
+
+    def record_quotes(self, count: int) -> None:
+        with self._lock:
+            self._quotes += count
+
+    def record_connection_error(self) -> None:
+        report = None
+        with self._lock:
+            self._connection_errors += 1
+            report = self._report_if_due_locked(time.monotonic())
+        if report is not None:
+            logging.info(report)
+
+    def worker_started(self) -> None:
+        with self._lock:
+            self._active += 1
+
+    def worker_finished(self) -> None:
+        with self._lock:
+            self._active -= 1
+
+    def log_summary(self) -> None:
+        with self._lock:
+            has_new_activity = (
+                self._attempts != self._last_report_attempts
+                or self._quotes != self._last_report_quotes
+            )
+            report = (
+                self._build_report_locked(time.monotonic())
+                if has_new_activity
+                else None
+            )
+        if report is not None:
+            logging.info(report)
+
+    def _report_if_due_locked(self, now: float) -> str | None:
+        if now - self._last_report_at < self._report_interval_seconds:
+            return None
+        return self._build_report_locked(now)
+
+    def _build_report_locked(self, now: float) -> str:
+        elapsed = max(now - self._last_report_at, 1e-9)
+        attempts_delta = self._attempts - self._last_report_attempts
+        quotes_delta = self._quotes - self._last_report_quotes
+        rpm = attempts_delta * 60.0 / elapsed
+        quotes_per_second = quotes_delta / elapsed
+        if self._latencies:
+            latency_p50, latency_p95 = np.percentile(
+                self._latencies,
+                [50, 95],
+            )
+        else:
+            latency_p50 = latency_p95 = 0.0
+
+        self._last_report_at = now
+        self._last_report_attempts = self._attempts
+        self._last_report_quotes = self._quotes
+        self._latencies.clear()
+        return (
+            "Alpaca quote pull: pages=%s rpm=%.0f quotes/s=%.0f "
+            "active=%s latency_p50=%.2fs latency_p95=%.2fs "
+            "429=%s 504=%s connection_errors=%s"
+            % (
+                self._pages,
+                rpm,
+                quotes_per_second,
+                self._active,
+                latency_p50,
+                latency_p95,
+                self._status_counts[429],
+                self._status_counts[504],
+                self._connection_errors,
+            )
+        )
+
+
 class AlpacaMarketsRetriever:
     FEED = 'sip'
+    QUOTE_FIELDS = ("ap", "as", "bp", "bs")
+    QUOTE_COLUMNS = ("ask_price", "ask_size", "bid_price", "bid_size")
+    QUOTE_SEED_LOOKBACK = timedelta(days=7)
 
     def __init__(
         self,
         timeframe: TimeFrame = TimeFrame.Minute,
+        use_quote_estimation: bool = True,
+        exact_quote_workers: int = 16,
+        quote_requests_per_minute: int = 9_000,
         object_store: B2ObjectStore | None = None,
         settings: Settings | None = None,
     ):
+        if exact_quote_workers <= 0:
+            raise ValueError("exact_quote_workers must be positive")
         self.timeframe = timeframe
+        self.use_quote_estimation = use_quote_estimation
+        self.exact_quote_workers = exact_quote_workers
         self._client: StockHistoricalDataClient | None = None
+        self._exact_quote_clients = threading.local()
+        self._quote_request_limiter = _RequestRateLimiter(
+            quote_requests_per_minute
+        )
+        self._quote_pull_metrics = _QuotePullMetrics()
         self._object_store = object_store
         self._settings = settings
 
@@ -67,12 +219,63 @@ class AlpacaMarketsRetriever:
             )
         return self._client
 
+    def _get_exact_quote_client(self) -> StockHistoricalDataClient:
+        """Return a worker-local client; requests.Session is not thread-safe."""
+        client = getattr(self._exact_quote_clients, "client", None)
+        if client is None:
+            alpaca_settings = self.settings.alpaca
+            client = StockHistoricalDataClient(
+                alpaca_settings.paper_api_key,
+                alpaca_settings.paper_api_secret,
+                raw_data=True,
+            )
+            client._session.hooks.setdefault("response", []).append(
+                self._quote_pull_metrics.response_hook
+            )
+            self._exact_quote_clients.client = client
+        return client
+
     def build_file_name(self,
                         symbol_or_symbols: str | list[str],
                         start: datetime,
                         end: datetime): 
-        return f'{self.timeframe}_{start.date()}-{end.date()}_' \
-                + f"{'+'.join(symbol_or_symbols if not isinstance(symbol_or_symbols, str) else [symbol_or_symbols])[:100]}.pkl"
+        quote_source = (
+            None
+            if self.use_quote_estimation
+            else "exact-quotes-asof-with-timestamp"
+        )
+        return self._build_file_name(
+            symbol_or_symbols,
+            start,
+            end,
+            suffix=quote_source,
+        )
+
+    def _build_bars_file_name(
+        self,
+        symbol_or_symbols: str | list[str],
+        start: datetime,
+        end: datetime,
+    ) -> str:
+        return self._build_file_name(symbol_or_symbols, start, end)
+
+    def _build_file_name(
+        self,
+        symbol_or_symbols: str | list[str],
+        start: datetime,
+        end: datetime,
+        suffix: str | None = None,
+    ) -> str:
+        symbols = (
+            symbol_or_symbols
+            if isinstance(symbol_or_symbols, list)
+            else [symbol_or_symbols]
+        )
+        suffix_part = f"_{suffix}" if suffix else ""
+        return (
+            f"{self.timeframe}_{start.date()}-{end.date()}_"
+            f"{'+'.join(symbols)[:100]}{suffix_part}.pkl"
+        )
     
     @staticmethod
     def build_object_key(storage_prefix: str, file_name: str) -> str:
@@ -184,7 +387,11 @@ class AlpacaMarketsRetriever:
             response[symbol] = df
         
         if save_dir:
-            file_name = self.build_file_name(symbol_or_symbols, start, end)
+            file_name = self._build_bars_file_name(
+                symbol_or_symbols,
+                start,
+                end,
+            )
             self.save_data(response, save_dir, file_name)
 
         return response
@@ -196,7 +403,11 @@ class AlpacaMarketsRetriever:
              save_dir: str=Constants.Data.Retrieving.Alpaca.BARS_STORAGE_PREFIX) -> dict[str: pd.DataFrame]:
         
         if save_dir:
-            file_name = self.build_file_name(symbol_or_symbols, start, end)
+            file_name = self._build_bars_file_name(
+                symbol_or_symbols,
+                start,
+                end,
+            )
             if self.cache_exists(save_dir, file_name):
                 logging.info(
                     "Downloading cached Alpaca bars from cloud storage: %s",
@@ -240,6 +451,267 @@ class AlpacaMarketsRetriever:
             'bid_size': int(mean_bid_size if np.isfinite(mean_ask_size) else 0),
         }
 
+    def _timeframe_duration(self) -> pd.Timedelta:
+        duration_units = {
+            TimeFrameUnit.Minute: "min",
+            TimeFrameUnit.Hour: "h",
+            TimeFrameUnit.Day: "d",
+            TimeFrameUnit.Week: "w",
+        }
+        try:
+            unit = duration_units[self.timeframe.unit]
+        except KeyError as exc:
+            raise ValueError(
+                f"Exact quote retrieval does not support {self.timeframe.unit} bars"
+            ) from exc
+        return pd.Timedelta(self.timeframe.amount, unit=unit)
+
+    @staticmethod
+    def _quote_timestamps_ns(quotes: list[dict]) -> np.ndarray:
+        return pd.DatetimeIndex(
+            pd.to_datetime(
+                [quote["t"] for quote in quotes],
+                utc=True,
+                format="ISO8601",
+            )
+        ).as_unit("ns").asi8
+
+    def _request_quote_page(
+        self,
+        symbol: str,
+        params: dict,
+    ) -> tuple[dict, list[dict]]:
+        self._quote_request_limiter.acquire()
+        try:
+            response = self._get_exact_quote_client().get(
+                path="/stocks/quotes",
+                data=params,
+            )
+        except (RequestsConnectionError, RequestsTimeout):
+            self._quote_pull_metrics.record_connection_error()
+            raise
+        quotes = response.get("quotes", {}).get(symbol, [])
+        self._quote_pull_metrics.record_quotes(len(quotes))
+        return response, quotes
+
+    def _exact_quotes_for_session(
+        self,
+        symbol: str,
+        session_start: pd.Timestamp,
+        bar_ends: pd.Series,
+    ) -> tuple[np.ndarray, np.ndarray, int]:
+        """Return the latest quote strictly before every bar end."""
+        self._quote_pull_metrics.worker_started()
+        try:
+            bar_end_ns = (
+                pd.DatetimeIndex(bar_ends)
+                .tz_convert("UTC")
+                .as_unit("ns")
+                .asi8
+            )
+            values = np.full(
+                (len(bar_ends), len(self.QUOTE_FIELDS)),
+                np.nan,
+            )
+            timestamps_ns = np.full(
+                len(bar_ends),
+                pd.NaT.value,
+                dtype=np.int64,
+            )
+
+            seed_params = StockQuotesRequest(
+                symbol_or_symbols=symbol,
+                start=(
+                    session_start - self.QUOTE_SEED_LOOKBACK
+                ).to_pydatetime(),
+                end=session_start.to_pydatetime(),
+                limit=1,
+                feed=self.FEED,
+            ).to_request_fields()
+            seed_params["sort"] = "desc"
+            _, seed_quotes = self._request_quote_page(
+                symbol,
+                seed_params,
+            )
+            if seed_quotes:
+                seed_quote = seed_quotes[0]
+                seed_timestamp_ns = self._quote_timestamps_ns(
+                    seed_quotes
+                )[0]
+                values[:] = [
+                    seed_quote[field] for field in self.QUOTE_FIELDS
+                ]
+                timestamps_ns[:] = seed_timestamp_ns
+
+            params = StockQuotesRequest(
+                symbol_or_symbols=symbol,
+                start=session_start.to_pydatetime(),
+                end=bar_ends.max().to_pydatetime(),
+                feed=self.FEED,
+            ).to_request_fields()
+            params.update(limit=10_000, sort="asc")
+            page_token = None
+            page_count = 1
+
+            while True:
+                params["page_token"] = page_token
+                response, quotes = self._request_quote_page(
+                    symbol,
+                    params,
+                )
+                page_count += 1
+                if quotes:
+                    quote_ns = self._quote_timestamps_ns(quotes)
+                    quote_positions = np.searchsorted(
+                        quote_ns,
+                        bar_end_ns,
+                        side="left",
+                    ) - 1
+                    valid_bars = quote_positions >= 0
+                    selected_quotes = [
+                        quotes[position]
+                        for position in quote_positions[valid_bars]
+                    ]
+                    values[valid_bars] = [
+                        [
+                            quote[field]
+                            for field in self.QUOTE_FIELDS
+                        ]
+                        for quote in selected_quotes
+                    ]
+                    timestamps_ns[valid_bars] = quote_ns[
+                        quote_positions[valid_bars]
+                    ]
+
+                page_token = response.get("next_page_token")
+                if page_token is None:
+                    return values, timestamps_ns, page_count
+        finally:
+            self._quote_pull_metrics.worker_finished()
+
+    def _add_exact_quotes(
+        self,
+        symbol: str,
+        bar_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+        return self._add_exact_quotes_to_bars({symbol: bar_df})[symbol]
+
+    def _add_exact_quotes_to_bars(
+        self,
+        bars: dict[str, pd.DataFrame],
+    ) -> dict[str, pd.DataFrame]:
+        self._quote_pull_metrics.reset()
+        results = {
+            symbol: bar_df.assign(
+                **{
+                    column: np.nan
+                    for column in self.QUOTE_COLUMNS
+                }
+            )
+            for symbol, bar_df in bars.items()
+        }
+        for result in results.values():
+            result["quote_timestamp"] = pd.Series(
+                pd.NaT,
+                index=result.index,
+                dtype=pd.DatetimeTZDtype(
+                    unit="ns",
+                    tz=Constants.Data.EASTERN_TZ,
+                ),
+            )
+        quote_timestamp_ns = {
+            symbol: np.full(len(bar_df), pd.NaT.value, dtype=np.int64)
+            for symbol, bar_df in bars.items()
+        }
+        sessions = []
+        session_counts = {}
+        for symbol, bar_df in bars.items():
+            if bar_df.empty:
+                session_counts[symbol] = 0
+                continue
+            period_start = pd.to_datetime(bar_df["date"])
+            period_end = period_start + self._timeframe_duration()
+            session_dates = period_start.dt.date
+            session_counts[symbol] = len(session_dates.unique())
+            for session_date in session_dates.unique():
+                positions = np.flatnonzero(session_dates == session_date)
+                sessions.append(
+                    (
+                        symbol,
+                        positions,
+                        period_start.iloc[positions].min(),
+                        period_end.iloc[positions],
+                    )
+                )
+
+        if not sessions:
+            return results
+
+        page_counts = {symbol: 0 for symbol in bars}
+        max_workers = min(self.exact_quote_workers, len(sessions))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(
+                    self._exact_quotes_for_session,
+                    symbol,
+                    session_start,
+                    bar_ends,
+                ): (symbol, positions)
+                for symbol, positions, session_start, bar_ends in sessions
+            }
+            for future in as_completed(futures):
+                symbol, positions = futures[future]
+                try:
+                    (
+                        quote_values,
+                        session_quote_timestamp_ns,
+                        page_count,
+                    ) = future.result()
+                except Exception:
+                    self._quote_pull_metrics.log_summary()
+                    raise
+                page_counts[symbol] += page_count
+                results[symbol].iloc[
+                    positions,
+                    [
+                        results[symbol].columns.get_loc(column)
+                        for column in self.QUOTE_COLUMNS
+                    ],
+                ] = quote_values
+                quote_timestamp_ns[symbol][positions] = (
+                    session_quote_timestamp_ns
+                )
+
+        self._quote_pull_metrics.log_summary()
+        for symbol, result in results.items():
+            result["quote_timestamp"] = pd.Series(
+                pd.to_datetime(
+                    quote_timestamp_ns[symbol],
+                    utc=True,
+                ).tz_convert(Constants.Data.EASTERN_TZ),
+                index=result.index,
+            )
+            missing_count = (
+                result[list(self.QUOTE_COLUMNS)]
+                .isna()
+                .all(axis=1)
+                .sum()
+            )
+            if missing_count:
+                logging.warning(
+                    "No prior Alpaca quote found for %s of %s %s bars.",
+                    missing_count,
+                    len(result),
+                    symbol,
+                )
+            logging.info(
+                "Retrieved exact Alpaca quotes for %s in %s pages across %s sessions.",
+                symbol,
+                page_counts[symbol],
+                session_counts[symbol],
+            )
+        return results
+
     def _bars_with_quotes(self,
              symbol_or_symbols: str | list[str],
              start: datetime=datetime(2025, 5, 1),
@@ -251,16 +723,26 @@ class AlpacaMarketsRetriever:
             end,
             save_dir=Constants.Data.Retrieving.Alpaca.BARS_STORAGE_PREFIX,
         )
-        logging.info(
-            "Retrieving Alpaca quote estimates from the Alpaca API for %s to %s.",
-            start,
-            end,
-        )
-        quotes = {symbol: self._quote_estimation(symbol, start, end) for symbol in symbol_or_symbols}
-
-        for symbol, bar_df in bars.items():
-            for column_name, value in quotes[symbol].items():
-                bar_df[column_name] = value
+        if self.use_quote_estimation:
+            logging.info(
+                "Retrieving Alpaca quote estimates from the Alpaca API for %s to %s.",
+                start,
+                end,
+            )
+            quotes = {
+                symbol: self._quote_estimation(symbol, start, end)
+                for symbol in bars
+            }
+            for symbol, bar_df in bars.items():
+                for column_name, value in quotes[symbol].items():
+                    bar_df[column_name] = value
+        else:
+            logging.info(
+                "Retrieving exact end-of-period Alpaca quotes for %s to %s.",
+                start,
+                end,
+            )
+            bars = self._add_exact_quotes_to_bars(bars)
         
         if save_dir:
             file_name = self.build_file_name(symbol_or_symbols, start, end)
