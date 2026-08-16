@@ -16,8 +16,13 @@ class FutureReturn:
         self.fill_value = fill_value
 
     def __call__(self, data: pd.DataFrame) -> pd.Series:
+        values = (
+            (data["bid_price"] + data["ask_price"]) / 2
+            if self.feature == "midpoint"
+            else data[self.feature]
+        )
         return (
-            data[self.feature].shift(-self.horizon) / data[self.feature] - 1.0
+            values.shift(-self.horizon) / values - 1.0
         ).fillna(self.fill_value).astype(np.float32)
 
 

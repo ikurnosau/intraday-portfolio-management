@@ -3,7 +3,7 @@ import pandas as pd
 import polars as pl
 
 from data.processed.features_polars import RelativeSpread as RelativeSpreadFeature
-from data.processed.statistics import RelativeSpread
+from data.processed.statistics import FutureReturn, RelativeSpread
 from modeling.allocator_evaluation import calc_realized_returns
 
 
@@ -17,6 +17,21 @@ def test_relative_spread_can_use_quote_midpoint() -> None:
     spread = RelativeSpread(denominator="midpoint", eps=0.0)(data)
 
     np.testing.assert_allclose(spread.to_numpy(), [0.02])
+
+
+def test_future_return_can_use_quote_midpoint() -> None:
+    data = pd.DataFrame({
+        "bid_price": [99.0, 101.0],
+        "ask_price": [101.0, 103.0],
+        "close": [200.0, 100.0],
+    })
+
+    returns = FutureReturn(
+        horizon=1,
+        feature="midpoint",
+    )(data)
+
+    np.testing.assert_allclose(returns.to_numpy(), [0.02, 0.0])
 
 
 def test_polars_relative_spread_can_use_quote_midpoint() -> None:

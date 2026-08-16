@@ -1,5 +1,5 @@
 schema_version: 7
-config_revision: 15
+config_revision: 16
 
 data:
   retriever:
@@ -182,6 +182,7 @@ data:
       name: future_return
       params:
         horizon: 1
+        feature: midpoint
     - output: volatility
       name: rolling_volatility
       params:
