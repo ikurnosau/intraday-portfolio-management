@@ -240,7 +240,7 @@ train:
       name: rmse_regression
   num_epochs: 20
   early_stopping_patience: 10
-  device: cpu
+  device: cuda
   cudnn_benchmark: true
   batch_size: 128
   shuffle: true
