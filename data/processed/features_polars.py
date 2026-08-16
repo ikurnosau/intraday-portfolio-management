@@ -178,13 +178,18 @@ class Column:
 class RelativeSpread:
     def __init__(
         self,
-        denominator: str = "close",
+        denominator: str = "midpoint",
         eps: float = 1e-8,
     ):
         self.denominator = denominator
         self.eps = eps
 
     def __call__(self, _: pl.LazyFrame) -> pl.Expr:
+        denominator = (
+            (pl.col("ask_price") + pl.col("bid_price")) / 2
+            if self.denominator == "midpoint"
+            else pl.col(self.denominator)
+        )
         return (pl.col("ask_price") - pl.col("bid_price")) / (
-            pl.col(self.denominator) + self.eps
+            denominator + self.eps
         )

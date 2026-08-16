@@ -47,13 +47,19 @@ class RollingVolatility:
 class RelativeSpread:
     def __init__(
         self,
-        denominator: str = "close",
+        denominator: str = "midpoint",
         eps: float = 1e-8,
     ):
         self.denominator = denominator
         self.eps = eps
 
     def __call__(self, data: pd.DataFrame) -> pd.Series:
+        if self.denominator == "midpoint":
+            denominator = (
+                data["ask_price"] + data["bid_price"]
+            ) / 2
+        else:
+            denominator = data[self.denominator]
         return (data["ask_price"] - data["bid_price"]) / (
-            data[self.denominator] + self.eps
+            denominator + self.eps
         )
