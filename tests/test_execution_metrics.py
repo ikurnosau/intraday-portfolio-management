@@ -19,6 +19,7 @@ from core_inference.bars_response_handler import BarsResponseHandler
 from core_inference.models.brokerage_state import BrokerageState
 from core_inference.quotes_response_handler import QuotesResponseHandler
 from core_inference.repository import Repository
+from core_inference.streaming_validation import _apply_replay_bar
 from core_inference.trader import Trader
 
 
@@ -81,6 +82,37 @@ def test_repository_snapshot_tracks_quote_timestamp_and_age():
     assert repository.get_latest_assets_data()["TEST"]["midpoint"] == pytest.approx(
         100.1
     )
+
+
+def test_streaming_validation_updates_quote_before_replaying_bar():
+    repository = _repository()
+    quote_timestamp = pd.Timestamp("2026-08-14 15:17:00", tz="UTC")
+
+    _apply_replay_bar(
+        repository,
+        "TEST",
+        {
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.5,
+            "close": 100.5,
+            "volume": 1500,
+            "date": quote_timestamp,
+            "bid_price": 100.4,
+            "ask_price": 100.6,
+            "bid_size": 25,
+            "ask_size": 30,
+            "quote_timestamp": quote_timestamp,
+        }
+    )
+
+    snapshot = repository.get_latest_asset_data("TEST")
+
+    assert snapshot["bid_price"] == pytest.approx(100.4)
+    assert snapshot["ask_price"] == pytest.approx(100.6)
+    assert snapshot["midpoint"] == pytest.approx(100.5)
+    assert snapshot["quote_timestamp"] == quote_timestamp
+    assert snapshot["quote_age_ms"] >= 0
 
 
 def test_backtest_fill_logs_cost_and_effective_price(caplog):

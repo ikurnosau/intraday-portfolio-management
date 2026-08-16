@@ -1,4 +1,5 @@
 import logging
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -16,6 +17,28 @@ from core_inference.brokerage_proxies.backtest_brokerage_proxy import (
 )
 from core_inference.repository import Repository
 from core_inference.trader import Trader
+
+
+def _apply_replay_bar(
+    repository: Repository,
+    symbol: str,
+    stock_data: dict,
+) -> None:
+    quote_fields = ("bid_price", "ask_price", "bid_size", "ask_size")
+    if all(pd.notna(stock_data.get(field)) for field in quote_fields):
+        repository.update_quote(
+            SimpleNamespace(
+                symbol=symbol,
+                bid_price=stock_data["bid_price"],
+                ask_price=stock_data["ask_price"],
+                bid_size=stock_data["bid_size"],
+                ask_size=stock_data["ask_size"],
+                timestamp=stock_data.get("quote_timestamp"),
+            )
+        )
+
+    stock_data["symbol"] = symbol
+    repository.add_bar(stock_data)
 
 
 def run_streaming_validation(
@@ -151,8 +174,7 @@ def run_streaming_validation(
 
             for stock_name, stock_data_series in timestamp_updates.items():
                 stock_data = stock_data_series.to_dict()
-                stock_data["symbol"] = stock_name
-                repository.add_bar(stock_data)
+                _apply_replay_bar(repository, stock_name, stock_data)
 
             offline_idx = day_i * n_day_steps + timestamp_i
 
