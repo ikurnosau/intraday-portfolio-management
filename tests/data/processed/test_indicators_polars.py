@@ -1,7 +1,7 @@
 import polars as pl
 import pytest
 
-from data.processed.indicators_polars import RollingVWAP, SMA
+from data.processed.indicators_polars import RSI, RollingVWAP, SMA
 
 
 def _sma_values(values: list[float], period: int) -> list[float]:
@@ -26,6 +26,22 @@ def test_sma_is_independent_of_values_before_period_window():
 def test_sma_rejects_non_positive_period():
     with pytest.raises(ValueError, match="period must be at least 1"):
         SMA(0)
+
+
+def test_price_indicators_can_use_quote_midpoint():
+    frame = pl.DataFrame({
+        "bid_price": [99.0, 101.0, 103.0],
+        "ask_price": [101.0, 103.0, 105.0],
+        "close": [100.0, 90.0, 80.0],
+    })
+
+    result = frame.select(
+        SMA(2, base_feature="midpoint")(frame.lazy()).alias("sma"),
+        RSI(2, base_feature="midpoint")(frame.lazy()).alias("rsi"),
+    )
+
+    assert result["sma"].to_list() == pytest.approx([100.0, 101.0, 103.0])
+    assert result["rsi"][-1] == pytest.approx(100.0)
 
 
 def _rolling_vwap_values(

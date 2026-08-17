@@ -4,7 +4,13 @@ import math
 
 import polars as pl
 
-from data.processed.indicators_polars import EMA, RollingVWAP, SMA, VWAP
+from data.processed.indicators_polars import (
+    EMA,
+    RollingVWAP,
+    SMA,
+    VWAP,
+    price_expression,
+)
 
 
 class LogReturn:
@@ -13,7 +19,7 @@ class LogReturn:
         self.eps = eps
 
     def __call__(self, _: pl.LazyFrame) -> pl.Expr:
-        value = pl.col(self.feature) + self.eps
+        value = price_expression(self.feature) + self.eps
         return (value / value.shift(1)).log().fill_null(0.0)
 
 
@@ -60,7 +66,7 @@ class RealizedVolatility:
 
     def __call__(self, _: pl.LazyFrame) -> pl.Expr:
         return (
-            (pl.col(self.feature) + self.eps)
+            (price_expression(self.feature) + self.eps)
             .pct_change()
             .rolling_std(window_size=self.window)
             .fill_null(0.0)
@@ -157,7 +163,7 @@ class VolatilitySlope:
         self.eps = eps
 
     def __call__(self, _: pl.LazyFrame) -> pl.Expr:
-        returns = (pl.col(self.feature) + self.eps).pct_change()
+        returns = (price_expression(self.feature) + self.eps).pct_change()
         return (
             returns.rolling_std(window_size=self.fast_window)
             / (

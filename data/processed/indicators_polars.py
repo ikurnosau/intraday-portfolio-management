@@ -10,6 +10,12 @@ from typing import Union
 _PolarsFrame = Union[pl.DataFrame, pl.LazyFrame]
 
 
+def price_expression(feature: str) -> pl.Expr:
+    if feature == "midpoint":
+        return (pl.col("bid_price") + pl.col("ask_price")) / 2
+    return pl.col(feature)
+
+
 class EMA:
     """Exponential Moving Average implemented with Polars expressions.
 
@@ -30,7 +36,7 @@ class EMA:
         """Return EMA expression to be used within a Polars select statement."""
         _ = lf  # not used but kept for unified signature
         return (
-            pl.col(self.base_feature)
+            price_expression(self.base_feature)
             .ewm_mean(span=self.period, adjust=False)
             .fill_null(strategy="forward")
             .fill_null(0.0)
@@ -49,7 +55,7 @@ class SMA:
     def __call__(self, lf: pl.LazyFrame) -> pl.Expr:
         _ = lf
         return (
-            pl.col(self.base_feature)
+            price_expression(self.base_feature)
             .rolling_mean(window_size=self.period, min_samples=1)
             .fill_null(0.0)
         )
@@ -68,7 +74,7 @@ class RSI:
 
     def __call__(self, lf: pl.LazyFrame) -> pl.Expr:
         _ = lf
-        delta = pl.col(self.base_feature).diff()
+        delta = price_expression(self.base_feature).diff()
 
         # Replace NaN diff with 0 so first row behaves like pandas `.where` logic
         delta = delta.fill_null(0.0)
