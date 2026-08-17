@@ -1,5 +1,5 @@
 schema_version: 7
-config_revision: 16
+config_revision: 17
 
 data:
   retriever:
@@ -195,7 +195,7 @@ data:
     name: triple_classification
     params:
       horizon: 1
-      base_feature: close
+      base_feature: midpoint
   normalizer:
     name: min_max_over_window
     params:

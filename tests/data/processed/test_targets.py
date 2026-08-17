@@ -1,7 +1,11 @@
 import numpy as np
 import pandas as pd
 
-from data.processed.targets import Balanced3ClassClassification, BinaryClassification
+from data.processed.targets import (
+    Balanced3ClassClassification,
+    BinaryClassification,
+    TripleClassification,
+)
 
 
 # -----------------------------------------------------------------------------
@@ -77,4 +81,19 @@ def test_binaryclassification_distribution_and_constraints():
         target_series.reset_index(drop=True),
         expected_target.reset_index(drop=True),
         check_names=False,
-    ) 
+    )
+
+
+def test_triple_classification_can_use_quote_midpoint():
+    df = pd.DataFrame({
+        "bid_price": [99.0, 101.0, 100.0],
+        "ask_price": [101.0, 103.0, 102.0],
+        "close": [100.0, 90.0, 110.0],
+    })
+
+    target = TripleClassification(
+        horizon=1,
+        base_feature="midpoint",
+    )(df)
+
+    np.testing.assert_array_equal(target.to_numpy(), [1.0, 0.0, 0.0])

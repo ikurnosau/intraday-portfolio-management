@@ -58,7 +58,11 @@ class TripleClassification:
         self.base_feature = base_feature
 
     def __call__(self, data: pd.DataFrame) -> pd.Series:
-        prices = data[self.base_feature]
+        prices = (
+            (data["bid_price"] + data["ask_price"]) / 2
+            if self.base_feature == "midpoint"
+            else data[self.base_feature]
+        )
         future_return = prices.shift(-self.horizon) / prices - 1.0
 
         # return_feature = data[self.base_feature].pct_change()
