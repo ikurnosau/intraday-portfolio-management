@@ -19,7 +19,10 @@ from core_inference.bars_response_handler import BarsResponseHandler
 from core_inference.models.brokerage_state import BrokerageState
 from core_inference.quotes_response_handler import QuotesResponseHandler
 from core_inference.repository import Repository
-from core_inference.streaming_validation import _apply_replay_bar
+from core_inference.streaming_validation import (
+    _apply_replay_bar,
+    _initial_replay_history,
+)
 from core_inference.trader import Trader
 
 
@@ -113,6 +116,25 @@ def test_streaming_validation_updates_quote_before_replaying_bar():
     assert snapshot["midpoint"] == pytest.approx(100.5)
     assert snapshot["quote_timestamp"] == quote_timestamp
     assert snapshot["quote_age_ms"] >= 0
+
+
+def test_streaming_validation_excludes_quote_timestamp_from_feature_history():
+    replay_start = pd.Timestamp("2026-08-14 09:30:00", tz="America/New_York")
+    history = pd.DataFrame({
+        "date": [replay_start - pd.Timedelta(minutes=1), replay_start],
+        "close": [100.0, 101.0],
+        "quote_timestamp": [
+            replay_start - pd.Timedelta(seconds=1),
+            replay_start,
+        ],
+    })
+
+    replay_history = _initial_replay_history(history, replay_start)
+
+    assert replay_history["date"].tolist() == [
+        replay_start - pd.Timedelta(minutes=1)
+    ]
+    assert "quote_timestamp" not in replay_history.columns
 
 
 def test_backtest_fill_logs_cost_and_effective_price(caplog):

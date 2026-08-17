@@ -41,6 +41,18 @@ def _apply_replay_bar(
     repository.add_bar(stock_data)
 
 
+def _initial_replay_history(
+    asset_df: pd.DataFrame,
+    replay_start: pd.Timestamp,
+) -> pd.DataFrame:
+    return (
+        asset_df.loc[asset_df["date"] < replay_start]
+        .drop(columns=["quote_timestamp"], errors="ignore")
+        .copy()
+        .reset_index(drop=True)
+    )
+
+
 def run_streaming_validation(
     *,
     config: ExperimentConfig,
@@ -103,10 +115,9 @@ def run_streaming_validation(
         )
 
         cur_day_initialization = {
-            asset_name: (
-                asset_df.loc[asset_df["date"] < replay_start]
-                .copy()
-                .reset_index(drop=True)
+            asset_name: _initial_replay_history(
+                asset_df,
+                replay_start,
             )
             for asset_name, asset_df in daily_slice.items()
         }
