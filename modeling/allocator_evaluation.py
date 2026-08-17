@@ -104,6 +104,7 @@ def test_cum_wealth(
     fee: float,
     spread_multiplier: float,
     device: torch.device,
+    horizon: int = 1,
 ) -> tuple[float, np.ndarray, np.ndarray, np.ndarray]:
     allocations, confidences = get_allocations(
         allocator,
@@ -112,10 +113,12 @@ def test_cum_wealth(
         volatilities,
         device,
     )
+    allocations = allocations[::horizon]
+    confidences = confidences[::horizon]
     realized_returns = calc_realized_returns(
         allocations,
-        next_returns,
-        spreads,
+        next_returns[::horizon],
+        spreads[::horizon],
         fee,
         spread_multiplier,
     )
@@ -135,6 +138,7 @@ def find_best_allocator_params(
     spread_multiplier: float,
     device: torch.device,
     allow_short_positions: bool,
+    horizon: int,
     n_runs_per_param: int = 20,
 ) -> tuple[int, float]:
     best_cum_wealth = -100.0
@@ -167,6 +171,7 @@ def find_best_allocator_params(
             fee=fee,
             spread_multiplier=spread_multiplier,
             device=device,
+            horizon=horizon,
         )
         logging.info("Obtained cum wealth: %s", cum_wealth)
         if cum_wealth > best_cum_wealth:
@@ -209,6 +214,7 @@ def find_best_allocator_params(
             fee=fee,
             spread_multiplier=spread_multiplier,
             device=device,
+            horizon=horizon,
         )
         logging.info("Obtained cum wealth: %s", cum_wealth)
         if cum_wealth > best_cum_wealth:
