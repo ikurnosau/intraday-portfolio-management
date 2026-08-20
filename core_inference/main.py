@@ -80,7 +80,7 @@ aggregated_proxy = AggregatedBrokerageProxy(
 )
 
 trader = Trader(
-    order_size_notional=10000.,
+    order_size_notional=1000,
     data_preparer=data_preparer,
     features=config.data_config.features_polars,
     statistics={
