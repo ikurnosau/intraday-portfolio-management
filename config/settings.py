@@ -14,8 +14,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 @dataclass(frozen=True)
 class AlpacaSettings:
-    paper_api_key: str
-    paper_api_secret: str
+    api_key: str
+    api_secret: str
+    trading_env: str = "paper"
+
+    @property
+    def paper(self) -> bool:
+        return self.trading_env == "paper"
 
 
 @dataclass(frozen=True)
@@ -108,17 +113,26 @@ class Settings:
             if value is not None
         }
         secret_values.update(os.environ if environ is None else environ)
+        trading_env = secret_values.get("TRADING_ENV", "paper")
+        if trading_env not in {"paper", "live"}:
+            raise ValueError("TRADING_ENV must be either 'paper' or 'live'")
+        if (
+            trading_env == "live"
+            and secret_values.get("ALLOW_LIVE_TRADING", "false") != "true"
+        ):
+            raise RuntimeError("Live trading not explicitly enabled")
 
         return cls(
             alpaca=AlpacaSettings(
-                paper_api_key=_required_secret(
+                api_key=_required_secret(
                     secret_values,
-                    "ALPACA_PAPER_API_KEY",
+                    "ALPACA_API_KEY",
                 ),
-                paper_api_secret=_required_secret(
+                api_secret=_required_secret(
                     secret_values,
-                    "ALPACA_PAPER_API_SECRET",
+                    "ALPACA_API_SECRET",
                 ),
+                trading_env=trading_env,
             ),
             b2=B2Settings(
                 endpoint_url=_required_string(b2, "endpoint_url", "b2"),

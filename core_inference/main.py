@@ -19,12 +19,6 @@ from core_inference.brokerage_proxies.aggregated_brokerage_proxy import Aggregat
 from core_inference.repository import Repository
 from observability.wandb_integration import load_production_model
 
-settings = get_settings()
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-production_model = load_production_model(settings=settings, device=device)
-config = production_model.package.config
-allocator = production_model.package.allocator
-
 logging.basicConfig(
     level=logging.INFO,  # Set the logging level
     format='%(asctime)s - %(levelname)s - %(message)s',  # Format for the log messages
@@ -32,6 +26,17 @@ logging.basicConfig(
         logging.StreamHandler()  # Log to the console
     ]
 )
+settings = get_settings()
+logging.warning(
+    "========== TRADING MODE: %s ==========",
+    settings.alpaca.trading_env.upper(),
+)
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+production_model = load_production_model(settings=settings, device=device)
+config = production_model.package.config
+allocator = production_model.package.allocator
+
 logging.info(
     "Loaded production model artifact: %s",
     production_model.resolved_artifact_name,
@@ -52,7 +57,6 @@ repository = Repository(
 )
 
 alpaca_proxy = AlpacaBrokerageProxy(
-    paper=True,
     settings=settings,
     repository=repository,
 )
@@ -99,8 +103,8 @@ async def quotes_handler(data):
     await quotes_response_handler.handle(data)
 
 wss_client = StockDataStream(
-    settings.alpaca.paper_api_key,
-    settings.alpaca.paper_api_secret,
+    settings.alpaca.api_key,
+    settings.alpaca.api_secret,
     feed=DataFeed.SIP
 )
 

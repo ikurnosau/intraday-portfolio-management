@@ -240,8 +240,8 @@ class AlpacaMarketsRetriever:
         if self._client is None:
             alpaca_settings = self.settings.alpaca
             self._client = StockHistoricalDataClient(
-                alpaca_settings.paper_api_key,
-                alpaca_settings.paper_api_secret,
+                alpaca_settings.api_key,
+                alpaca_settings.api_secret,
             )
         return self._client
 
@@ -251,8 +251,8 @@ class AlpacaMarketsRetriever:
         if client is None:
             alpaca_settings = self.settings.alpaca
             client = StockHistoricalDataClient(
-                alpaca_settings.paper_api_key,
-                alpaca_settings.paper_api_secret,
+                alpaca_settings.api_key,
+                alpaca_settings.api_secret,
                 raw_data=True,
             )
             client._session.hooks.setdefault("response", []).append(
@@ -342,8 +342,9 @@ class AlpacaMarketsRetriever:
     def get_all_symbols(self) -> list[str]:
         alpaca_settings = self.settings.alpaca
         trading_client = TradingClient(
-            alpaca_settings.paper_api_key,
-            alpaca_settings.paper_api_secret,
+            alpaca_settings.api_key,
+            alpaca_settings.api_secret,
+            paper=alpaca_settings.paper,
         )
         search_params = GetAssetsRequest(asset_class=AssetClass.US_EQUITY)
 

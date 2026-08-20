@@ -27,8 +27,8 @@ wandb:
 """
 
 VALID_SECRETS = """
-ALPACA_PAPER_API_KEY=alpaca-key
-ALPACA_PAPER_API_SECRET=alpaca-secret
+ALPACA_API_KEY=alpaca-key
+ALPACA_API_SECRET=alpaca-secret
 B2_ACCESS_KEY_ID=b2-key
 B2_SECRET_ACCESS_KEY=b2-secret
 WANDB_API_KEY=wandb-key
@@ -48,7 +48,9 @@ def test_load_combines_yaml_settings_and_env_secrets(tmp_path):
 
     settings = Settings.load(settings_path, env_path, environ={})
 
-    assert settings.alpaca.paper_api_key == "alpaca-key"
+    assert settings.alpaca.api_key == "alpaca-key"
+    assert settings.alpaca.trading_env == "paper"
+    assert settings.alpaca.paper is True
     assert settings.b2.bucket_name == "market-data"
     assert settings.b2.access_key_id == "b2-key"
     assert settings.runtime.enable_torch_compile is False
@@ -64,10 +66,51 @@ def test_environment_overrides_dotenv_secrets(tmp_path):
     settings = Settings.load(
         settings_path,
         env_path,
-        environ={"ALPACA_PAPER_API_KEY": "override-key"},
+        environ={"ALPACA_API_KEY": "override-key"},
     )
 
-    assert settings.alpaca.paper_api_key == "override-key"
+    assert settings.alpaca.api_key == "override-key"
+
+
+def test_live_trading_requires_explicit_guard(tmp_path):
+    settings_path, env_path = write_config_files(tmp_path)
+
+    with pytest.raises(
+        RuntimeError,
+        match="Live trading not explicitly enabled",
+    ):
+        Settings.load(
+            settings_path,
+            env_path,
+            environ={"TRADING_ENV": "live"},
+        )
+
+
+def test_live_trading_can_be_explicitly_enabled(tmp_path):
+    settings_path, env_path = write_config_files(tmp_path)
+
+    settings = Settings.load(
+        settings_path,
+        env_path,
+        environ={
+            "TRADING_ENV": "live",
+            "ALLOW_LIVE_TRADING": "true",
+        },
+    )
+
+    assert settings.alpaca.trading_env == "live"
+    assert settings.alpaca.paper is False
+
+
+def test_invalid_trading_environment_is_rejected(tmp_path):
+    settings_path, env_path = write_config_files(tmp_path)
+
+    with pytest.raises(ValueError, match="TRADING_ENV"):
+        Settings.load(
+            settings_path,
+            env_path,
+            environ={"TRADING_ENV": "sandbox"},
+        )
 
 
 def test_missing_secret_has_actionable_error(tmp_path):

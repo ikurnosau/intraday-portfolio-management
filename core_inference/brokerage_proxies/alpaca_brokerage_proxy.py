@@ -16,15 +16,14 @@ class AlpacaBrokerageProxy(BaseBrokerageProxy):
     def __init__(
         self,
         repository: Repository,
-        paper: bool = True,
         settings: Settings | None = None,
     ):
         settings = settings or get_settings()
-        self.paper = paper
+        self.paper = settings.alpaca.paper
         self.repository = repository
         self.trading_client = TradingClient(
-            settings.alpaca.paper_api_key,
-            settings.alpaca.paper_api_secret,
+            settings.alpaca.api_key,
+            settings.alpaca.api_secret,
             paper=self.paper,
         )
 
