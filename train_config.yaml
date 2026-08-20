@@ -190,7 +190,7 @@ data:
     - output: next_return
       name: future_return
       params:
-        horizon: 60
+        horizon: 1
         feature: midpoint
     - output: volatility
       name: rolling_volatility
@@ -203,7 +203,7 @@ data:
   target:
     name: triple_classification
     params:
-      horizon: 60
+      horizon: 1
       base_feature: midpoint
   normalizer:
     name: min_max_over_window
@@ -213,7 +213,7 @@ data:
   missing_values_handler:
     name: continuous_forward_fill_polars
   in_seq_len: 60
-  horizon: 60
+  horizon: 1
   multi_asset_prediction: true
 
 model:
