@@ -38,8 +38,13 @@ class RollingVolatility:
         self.fill_value = fill_value
 
     def __call__(self, data: pd.DataFrame) -> pd.Series:
+        values = (
+            (data["bid_price"] + data["ask_price"]) / 2
+            if self.feature == "midpoint"
+            else data[self.feature]
+        )
         return (
-            data[self.feature]
+            values
             .pct_change()
             .astype(np.float32)
             .rolling(window=self.window)

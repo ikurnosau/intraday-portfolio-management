@@ -3,7 +3,11 @@ import pandas as pd
 import polars as pl
 
 from data.processed.features_polars import RelativeSpread as RelativeSpreadFeature
-from data.processed.statistics import FutureReturn, RelativeSpread
+from data.processed.statistics import (
+    FutureReturn,
+    RelativeSpread,
+    RollingVolatility,
+)
 from modeling.allocator_evaluation import calc_realized_returns
 
 
@@ -32,6 +36,23 @@ def test_future_return_can_use_quote_midpoint() -> None:
     )(data)
 
     np.testing.assert_allclose(returns.to_numpy(), [0.02, 0.0])
+
+
+def test_rolling_volatility_can_use_quote_midpoint() -> None:
+    data = pd.DataFrame({
+        "bid_price": [99.0, 101.0, 100.0],
+        "ask_price": [101.0, 103.0, 102.0],
+        "close": [200.0, 100.0, 200.0],
+    })
+
+    volatility = RollingVolatility(
+        window=2,
+        feature="midpoint",
+    )(data)
+    midpoint_returns = pd.Series([100.0, 102.0, 101.0]).pct_change()
+    expected = midpoint_returns.rolling(window=2).std().fillna(0.0)
+
+    np.testing.assert_allclose(volatility.to_numpy(), expected.to_numpy())
 
 
 def test_polars_relative_spread_can_use_quote_midpoint() -> None:

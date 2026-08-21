@@ -1,5 +1,5 @@
 schema_version: 7
-config_revision: 18
+config_revision: 19
 
 data:
   retriever:
@@ -196,6 +196,7 @@ data:
       name: rolling_volatility
       params:
         window: 10
+        feature: midpoint
     - output: spread
       name: relative_spread
       params:

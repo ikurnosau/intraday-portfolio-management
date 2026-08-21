@@ -61,7 +61,7 @@ from modeling.models.tsa_classifier import TemporalSpatial
 # These values are maintained manually; model artifacts should also record the
 # Git commit SHA to identify the exact source code used during training.
 SCHEMA_VERSION = 7
-CONFIG_REVISION = 18
+CONFIG_REVISION = 19
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "train_config.yaml"
 
 T = TypeVar("T")

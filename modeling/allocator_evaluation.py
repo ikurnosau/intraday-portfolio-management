@@ -143,6 +143,7 @@ def find_best_allocator_params(
 ) -> tuple[int, float]:
     best_cum_wealth = -100.0
     best_select_from_n_best = 0
+    best_confidences: np.ndarray | None = None
     n_assets = spreads.shape[1]
     step = max(1, n_assets // (n_runs_per_param * 2))
     select_from_n_best_range = range(
@@ -177,6 +178,7 @@ def find_best_allocator_params(
         if cum_wealth > best_cum_wealth:
             best_cum_wealth = cum_wealth
             best_select_from_n_best = select_from_n_best
+            best_confidences = confidences
             logging.info(
                 "New best select_from_n_best: %s, cum_wealth: %s",
                 best_select_from_n_best,
@@ -190,8 +192,10 @@ def find_best_allocator_params(
 
     best_confidence_threshold = 0.0
     best_cum_wealth = -100.0
-    q10 = np.quantile(confidences, 0.10)
-    q90 = np.quantile(confidences, 0.90)
+    if best_confidences is None:
+        raise RuntimeError("No allocator universe candidates were evaluated")
+    q10 = np.quantile(best_confidences, 0.10)
+    q90 = np.quantile(best_confidences, 0.90)
     for confidence_threshold in np.linspace(q10, q90, n_runs_per_param):
         logging.info(
             "Running with select_from_n_best: %s and confidence threshold: %s",
